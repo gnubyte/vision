@@ -26,6 +26,17 @@ if [ ! -f "$SWAPPER_DIR/swapper/app.py" ]; then
 fi
 echo "==> Spark Swapper $(cat "$SWAPPER_DIR/swapper/VERSION" 2>/dev/null || echo '?') at $(git -C "$SWAPPER_DIR" rev-parse --short HEAD 2>/dev/null || echo '?')"
 
+# The Swapper makes its own certificate on a box; here it is made up front, where the Swapper looks for it, so a
+# machine whose openssl differs from the box's still starts it.
+mkdir -p "$LIVE/conf" "$LIVE/state"
+if [ ! -f "$LIVE/conf/tls.crt" ]; then
+  openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout "$LIVE/conf/tls.key" -out "$LIVE/conf/tls.crt" \
+      -subj "/CN=Spark Swapper (live check)" -addext "subjectAltName=DNS:localhost,IP:127.0.0.1" 2>"$LIVE/openssl.log" \
+    || openssl req -x509 -newkey rsa:2048 -nodes -days 30 -keyout "$LIVE/conf/tls.key" -out "$LIVE/conf/tls.crt" \
+      -subj "/CN=Spark Swapper (live check)" 2>>"$LIVE/openssl.log" \
+    || { echo "could not make a certificate:" >&2; cat "$LIVE/openssl.log" >&2; exit 1; }
+fi
+
 pids=()
 cleanup() { for pid in "${pids[@]:-}"; do [ -n "$pid" ] && kill "$pid" 2>/dev/null || true; done; }
 trap cleanup EXIT
