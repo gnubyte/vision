@@ -17,7 +17,8 @@ settings:
   base:
     MARKETING_VERSION: "0.20.0"
     CURRENT_PROJECT_VERSION: "20"
-    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    # XcodeGen's header-copy step for the static library writes outside the script sandbox.
+    ENABLE_USER_SCRIPT_SANDBOXING: NO
 targets:
   VisionHarnessCore:
     type: library.static

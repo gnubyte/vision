@@ -170,7 +170,7 @@ final class MobileModel {
     }
 
     func refresh(_ id: String) async {
-        guard let connection = connections.first(where: { $0.id == id }), let client = client(for: connection) else { return }
+        guard let connection = connections.first(where: { $0.id == id }), let client = self.client(for: connection) else { return }
         do {
             let status = try await client.status()
             statuses[id] = status
@@ -187,7 +187,7 @@ final class MobileModel {
 
     /// Stop what the box serves and load `key`. The box takes minutes; its status is polled until it is done.
     func swap(_ id: String, to key: String) async {
-        guard let connection = connections.first(where: { $0.id == id }), let client = client(for: connection) else { return }
+        guard let connection = connections.first(where: { $0.id == id }), let client = self.client(for: connection) else { return }
         do {
             try await client.swap(to: key)
             switching.insert(id)
@@ -349,14 +349,14 @@ final class MobileModel {
             thinking[chatID] = nil
             tasks[chatID] = nil
             history.finish(turnID: turnID, outcome: outcome, duration: Date().timeIntervalSince(started), model: servedModel)
-            if let chat = chat(chatID) { save(chat) }
+            if let chat = self.chat(chatID) { save(chat) }
         }
         func fail(_ message: String) {
             append(ChatEntry(role: .error, text: message), to: chatID)
             outcome = .failed(reason: message)
         }
 
-        guard let connection = connection(chat(chatID)?.boxID) else {
+        guard let connection = self.connection(self.chat(chatID)?.boxID) else {
             return fail("Add a Spark Swapper box first (the Boxes tab), then send this again.")
         }
         // What the box serves can change between prompts: ask it.
@@ -372,7 +372,7 @@ final class MobileModel {
         guard let model = status.activeModel else {
             return fail("\(connection.name) isn't serving a model. Pick one on the Boxes tab.")
         }
-        guard let profile = profile(for: connection, model: model) else {
+        guard let profile = self.profile(for: connection, model: model) else {
             return fail("\(connection.name) didn't say where its model API is. Remove the box and add it again with its connection code.")
         }
         servedModel = model.served_id
@@ -380,7 +380,7 @@ final class MobileModel {
         // Files become text and scanned pages become pictures, once; then the request is kept inside the
         // model's picture limit, the oldest pictures rolling off to disk.
         let digest = AttachmentDigest.prepare(text: prompt, attachments: items, options: .init(vision: model.vision ?? true))
-        var transcript = chat(chatID)?.transcript ?? []
+        var transcript = self.chat(chatID)?.transcript ?? []
         transcript.append(.user(digest.text, attachments: digest.attachments.isEmpty ? nil : digest.attachments))
         var budget = ImageBudget.forRoute(maxImages: imageLimit(for: profile), contextWindow: profile.contextWindow)
         let client = OpenAIClient(profile: profile)

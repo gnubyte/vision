@@ -182,8 +182,10 @@ public enum ImageLimit {
         guard t.contains("image") || t.contains("multimodal") || t.contains("limit-mm-per-prompt")
                 || t.contains("limit_mm_per_prompt") else { return false }
         if parse(text) != nil { return true }
-        return ["too many", "at most", "limit-mm-per-prompt", "limit_mm_per_prompt", "exceed", "maximum number"]
-            .contains { t.contains($0) }
+        // Engines word it their own way (vLLM, SGLang, TensorFold, llama.cpp, TabbyAPI): any complaint that
+        // pairs pictures with a quantity counts.
+        return ["too many", "at most", "more than", "limit-mm-per-prompt", "limit_mm_per_prompt", "exceed",
+                "maximum", "limit"].contains { t.contains($0) }
     }
 
     /// The server refused a request that carried `sent` pictures: the limit to use from now on, or nil when the

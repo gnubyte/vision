@@ -290,7 +290,7 @@ struct ChatView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 28)
-                .help("Attach an image or file")
+                .help("Attach an image, a file or a PDF; add a folder to this chat")
                 .accessibilityLabel("Attach an image or file")
                 .disabled(session.running)
 
@@ -351,30 +351,8 @@ struct ChatView: View {
                             .foregroundStyle(.secondary)
                             .help("Clear the unsent prompt (it is saved automatically every few seconds)")
                         }
-                        if let name = session.projectName, !session.isAgent {
-                            Label(name, systemImage: "folder")
-                                .foregroundStyle(.secondary)
-                        }
-                        Button {
-                            model.addFolder(to: session)
-                        } label: {
-                            Label("Add Folder", systemImage: "folder.badge.plus")
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Add another folder to this chat, so the agent can work across both")
-                        if model.guardian.isSignedIn {
-                            Button {
-                                model.sendingToGuardian = session
-                            } label: {
-                                Label("Send to Guardian", systemImage: "paperplane")
-                                    .labelStyle(.iconOnly)
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                            .help("Send this chat and any files to a person, an AI Coders project or a board in Guardian")
-                        }
+                        // (Adding a folder and sending to Guardian are in the + menu; the project is in the
+                        // window's toolbar. They are not repeated here: this row is the model and how it runs.)
                     }
                     .fixedSize()
                 }
