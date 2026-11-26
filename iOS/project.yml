@@ -27,6 +27,8 @@ targets:
         group: VisionHarnessCore
       - path: ../Sources/VisionHarnessCore/AttachmentDigest.swift
         group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/Bedrock/BedrockModels.swift
+        group: VisionHarnessCore
       - path: ../Sources/VisionHarnessCore/CertificatePinning.swift
         group: VisionHarnessCore
       - path: ../Sources/VisionHarnessCore/Compaction.swift
