@@ -82,7 +82,9 @@ final class MobileModel {
     @ObservationIgnored let secrets: any SecretStore
     @ObservationIgnored let history: PromptHistoryStore
     @ObservationIgnored let attachments: AttachmentStore
-    @ObservationIgnored private let defaults = UserDefaults.standard
+    @ObservationIgnored private let defaults: UserDefaults
+    /// Where chats, the prompt history and kept attachments live.
+    @ObservationIgnored private let storage: URL
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var polls: [String: Task<Void, Never>] = [:]
 
@@ -98,11 +100,15 @@ final class MobileModel {
     code in fenced blocks. When the user attaches pictures or files, work from what is in them.
     """
 
-    private var chatsFolder: URL { AppPaths.support.appendingPathComponent("mobile-chats", isDirectory: true) }
+    private var chatsFolder: URL { storage.appendingPathComponent("mobile-chats", isDirectory: true) }
 
-    init() {
-        isDemo = UserDefaults.standard.bool(forKey: "VisionDemo")
-        demoScreen = isDemo ? UserDefaults.standard.string(forKey: "VisionDemoScreen") : nil
+    /// The app's own model reads the phone's settings, Keychain and data folder. A test hands in its own
+    /// settings, secret store and folder instead.
+    init(defaults: UserDefaults = .standard, secrets store: (any SecretStore)? = nil, storage folder: URL? = nil) {
+        self.defaults = defaults
+        storage = folder ?? AppPaths.support
+        isDemo = folder == nil && defaults.bool(forKey: "VisionDemo")
+        demoScreen = isDemo ? defaults.string(forKey: "VisionDemoScreen") : nil
         if isDemo {
             secrets = MemorySecretStore()
             history = PromptHistoryStore(fileURL: nil)
@@ -111,9 +117,9 @@ final class MobileModel {
             seedDemo()
             return
         }
-        secrets = KeychainSecretStore()
-        history = PromptHistoryStore.standard()
-        attachments = AttachmentStore.standard()
+        secrets = store ?? KeychainSecretStore()
+        history = PromptHistoryStore(fileURL: storage.appendingPathComponent("prompt-history.json"))
+        attachments = AttachmentStore(root: storage.appendingPathComponent("attachments", isDirectory: true))
         maxImages = defaults.object(forKey: Keys.maxImages) as? Int ?? ImageBudget.defaultMaxImages
         systemPrompt = defaults.string(forKey: Keys.systemPrompt) ?? Self.defaultSystemPrompt
         learnedImageLimits = defaults.dictionary(forKey: Keys.learnedLimits) as? [String: Int] ?? [:]

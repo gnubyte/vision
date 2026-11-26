@@ -582,6 +582,12 @@ runs the app in the simulator: `iOS/simulator-smoke.sh` opens every screen on bu
 (`-VisionDemo YES` — a made-up box and chat, no network, nothing kept), fails if the app has exited, and
 keeps a screenshot of each (`Vision-iOS-screens`).
 
+It also runs `iOS/live-check.sh`, which checks the app's own code against the real thing: it starts the
+Spark Swapper itself in its demo mode (the real web service over HTTPS with its own certificate — sign-in,
+app tokens, connection codes, status, switch jobs — with no GPU behind it) and a stand-in model server
+that, like vLLM, refuses more than two pictures a request, then in the simulator adds the box both ways,
+chats with too many pictures and with a PDF, and asks for a model switch.
+
 The IPA is **unsigned**, and iOS only installs signed apps. Either re-sign it with a sideloading tool
 that signs with your own Apple ID (AltStore, Sideloadly), or run it from Xcode: `cd iOS && xcodegen &&
 open Vision.xcodeproj`, choose your team under **Signing & Capabilities**, and run on your phone. The

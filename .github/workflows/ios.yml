@@ -62,6 +62,11 @@ jobs:
           SMOKE_PRINT: ${{ contains(github.event.head_commit.message, '[print-screens]') && '1' || '0' }}
         run: bash iOS/simulator-smoke.sh
 
+      # The app's own code against the real Spark Swapper (its demo mode: the real service over HTTPS with its
+      # own certificate) and a model server that takes two pictures a request.
+      - name: Live check against Spark Swapper
+        run: bash iOS/live-check.sh
+
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4
