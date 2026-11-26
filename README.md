@@ -577,7 +577,10 @@ cd iOS && ./build-ipa.sh        # → iOS/build/Vision.ipa
 ```
 
 Every push builds the IPA in GitHub Actions (**iOS IPA** workflow ▸ the run ▸ Artifacts ▸
-`Vision-iOS-ipa`), and a tagged release attaches `Vision.ipa` next to `Vision.dmg`.
+`Vision-iOS-ipa`), and a tagged release attaches `Vision.ipa` next to `Vision.dmg`. The same workflow then
+runs the app in the simulator: `iOS/simulator-smoke.sh` opens every screen on built-in demo data
+(`-VisionDemo YES` — a made-up box and chat, no network, nothing kept), fails if the app has exited, and
+keeps a screenshot of each (`Vision-iOS-screens`).
 
 The IPA is **unsigned**, and iOS only installs signed apps. Either re-sign it with a sideloading tool
 that signs with your own Apple ID (AltStore, Sideloadly), or run it from Xcode: `cd iOS && xcodegen &&

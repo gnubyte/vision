@@ -64,10 +64,13 @@ struct CodeModeView: View {
             // With nothing in the middle the agent takes the whole width (and can't be hidden: something
             // has to be on screen).
             if chatVisible || !centerVisible {
+                // (A wide ideal when it is alone with the tree, so the split gives the spare room to the agent
+                // rather than stretching the tree to its maximum.)
                 chatPane
-                    .frame(minWidth: 320, idealWidth: centerVisible ? 400 : nil,
+                    .frame(minWidth: 320, idealWidth: centerVisible ? 400 : 1_100,
                            maxWidth: centerVisible ? 640 : .infinity,
                            maxHeight: .infinity)
+                    .layoutPriority(centerVisible ? 0 : 1)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
