@@ -1,6 +1,6 @@
-> **Vision for macOS has moved to [github.com/phastings503cm/vision-mac](https://github.com/phastings503cm/vision-mac).**
-> Releases from 0.16.0 on are published there — download the latest from its
-> [Releases](https://github.com/phastings503cm/vision-mac/releases/latest) page. This repository is no longer updated.
+> **Vision Harness** — the harness for macOS and, from 0.20, iPhone and iPad. Mac releases 0.16–0.19 were
+> published at [github.com/phastings503cm/vision-mac](https://github.com/phastings503cm/vision-mac); 0.20 is
+> built from this repository, which attaches the Mac `Vision.dmg` and the iPhone `Vision.ipa` to each release.
 
 <p align="center">
   <img src="assets/logo/logo.png" alt="Vision for macOS" width="120" />
@@ -62,7 +62,8 @@ project's `.dsh` folder and `DSH.md` keep working.
 open build/Vision.app
 ```
 
-Requires Swift 6 / Xcode 26 and macOS 14+.
+Requires Swift 6 / Xcode 26 and macOS 14+. The iPhone app builds from the same sources — see
+[Vision for iPhone](#vision-for-iphone).
 
 ## First run
 
@@ -378,6 +379,39 @@ calls, the text is run through an XML parser that understands both the `<functio
 - **Deleting a chat asks first** (and offers Archive); a chat waiting for permission shows a shield in the
   sidebar; the transcript follows new output only while you are at the bottom.
 
+### Since 0.20
+
+- **Pictures that fit the model** (0.20). A vision model takes only so many pictures in one request — a
+  Spark Swapper serves Inkling 2 Mini with eight, and vLLM refuses the whole request past its
+  `--limit-mm-per-prompt` — so a long chat, a few attached screenshots or a spell of driving the desktop
+  used to reach the limit and stay stuck there. Now each request carries at most the model's limit: what a
+  tool captured last and the pictures on your newest message travel, and older ones **roll off** — out of
+  the request, kept on disk, replaced by a line that names them and where they are, so the model can ask
+  for one again with `view_image`. A server that takes fewer says so once (the refusal is read, the oldest
+  pictures are dropped and the request is sent again in the same turn) and Vision remembers the number for
+  that model. **Settings ▸ General ▸ Pictures per request** sets the ceiling (8).
+- **Files any server can read** (0.20). Attachments used to go out as an OpenAI `file` part, which local
+  servers refuse. A text file now goes inline, a PDF goes as its text page by page, and a scanned PDF with
+  no text layer goes as pictures of its first pages (inside the picture limit). OpenAI and Bedrock, which
+  read files themselves, still get the file. Large pictures are scaled to 1568 px before they are sent.
+- **Answers without ceremony** (0.20). A question, a "what if" or a small task is simply answered — text,
+  tool calls, an answer — the way a chat assistant does. The Planning → Execution → Validation → Results
+  card and the plan panel appear only when the work is planned: the agent laid out a step list, proposed a
+  plan, or it is a `/goal` or a queue task. **Settings ▸ General ▸ Planning** chooses **Automatic**,
+  **Always plan** or **Just talk**.
+- **An optional editor** (0.20). In code mode the editor shows while a file is open and gives its room to
+  the agent when none is — no more empty "No file open" pane in the middle. The toolbar's editor button
+  (**⌥⌘E**, **View ▸ Toggle Editor**) hides it outright or brings it back, and **Settings ▸ Editor** can
+  pin it always on. The plan and the task queue now share the right edge instead of stacking two panels
+  beside the chat.
+- **Prompt history you can take with you** (0.20). **⇧⌘H** (or the "N prompts in this chat" line under a
+  chat) opens the history on that chat alone; switch to all chats from the same window. Sort by newest,
+  oldest or longest-running; **Copy All** copies the prompts listed — in that order, with ISO timestamps,
+  outcome, duration, model and attachments — as Markdown, CSV or JSON, or saves them to a file. Every file
+  and screenshot a prompt carried is kept (`…/Vision/attachments`, stored once by content): its thumbnail
+  is on the prompt's row, a click opens it, and **Attach again** puts it back on the composer.
+- **Vision for iPhone** (0.20). See [below](#vision-for-iphone).
+
 ### Since 0.19
 
 - **Prompt history, everywhere** (0.19). Every prompt — chat, code, agent, automations, the task
@@ -423,7 +457,8 @@ calls, the text is run through an XML parser that understands both the `<functio
 - **Project tree** — lazy, filterable, FSEvents-backed. New files from a build or from the agent show
   up without a refresh. Right-click for reveal, rename, new file/folder, trash, open a terminal here,
   or drop the path into the chat composer as `@path`.
-- **Editor** — tabbed `NSTextView` with a line-number gutter, soft tabs, indent-preserving newlines,
+- **Editor** — optional: shown while a file is open, hidden when none is, and toggled with the toolbar's
+  editor button or **⌥⌘E** (opening a file from the tree brings it back). Tabbed `NSTextView` with a line-number gutter, soft tabs, indent-preserving newlines,
   find bar, and a syntax highlighter covering the usual languages. Highlighting is scoped to the
   visible range, so a 20 000-line file opens as fast as a short one.
 - **Live reload** — when the agent rewrites a file you have open, a clean buffer just follows it. A
@@ -465,6 +500,12 @@ chat, in chat and code mode: the selected chat's `/goal`, its steps from `todo_w
 they've run. It always shows the selected chat; while it's open the transcript keeps the plan to one
 line. Drag its edge to resize it. It opens by itself when the agent first makes a plan, unless you untick
 **Show when the agent makes a plan**.
+
+A plan is for planned work. A question or a small task gets neither the panel nor the phase card: the
+agent answers, using tools where it needs to. The card appears once the agent writes a step list of two or
+more items or proposes a plan, and for a `/goal` or a queue task (**Settings ▸ General ▸ Planning** makes
+it always or never). The plan panel and the task queue share the right edge — opening one puts the other
+behind it.
 
 ### Slash commands
 
@@ -510,6 +551,38 @@ load and it's inside the permission boundary, for that chat only.
 Chats sit under collapsible projects, or newest-first with the **Projects | Recent** switch. **Chat Archive**
 keeps every chat that leaves the sidebar under `archive/` in the data folder: JSON plus a readable Markdown
 copy. Search titles and messages, read them, restore them.
+
+## Vision for iPhone
+
+`iOS/` holds a SwiftUI app for iPhone and iPad (iOS 17+) that talks to your
+[Spark Swapper](https://github.com/gnubyte/DGX-Spark-Swapper) boxes. It is not a second implementation:
+it compiles the harness's own Swapper client, OpenAI-compatible client, certificate pinning, picture
+roll-off, attachment handling and prompt history from `Sources/VisionHarnessCore` (the files with nothing
+Mac-specific in them — there is no shell, file or screen tool on a phone).
+
+- **Boxes** — add a box by pasting the connection code from the Swapper's **Connect** tab (it carries the
+  address, the certificate and an app token, so no password is stored), or with the address and the web
+  page's login (the certificate's fingerprint is shown for you to approve first; on Swapper 2.0+ the login
+  is traded for an app token). Each box shows what it serves, its context window, speed and memory; tap a
+  model to **switch**, and watch the switch step by step.
+- **Chats** — streamed replies from the model the box serves, rendered as Markdown. Attach photos, paste a
+  picture, or add files and PDFs: the same roll-off keeps a chat inside the model's picture limit, and the
+  limit is learned from the server when it is lower.
+- **Prompt history** — per chat or across all chats: sort by time or duration, search, copy or share as
+  Markdown, CSV or JSON, and reopen the photos and files a prompt carried.
+
+```bash
+brew install xcodegen
+cd iOS && ./build-ipa.sh        # → iOS/build/Vision.ipa
+```
+
+Every push builds the IPA in GitHub Actions (**iOS IPA** workflow ▸ the run ▸ Artifacts ▸
+`Vision-iOS-ipa`), and a tagged release attaches `Vision.ipa` next to `Vision.dmg`.
+
+The IPA is **unsigned**, and iOS only installs signed apps. Either re-sign it with a sideloading tool
+that signs with your own Apple ID (AltStore, Sideloadly), or run it from Xcode: `cd iOS && xcodegen &&
+open Vision.xcodeproj`, choose your team under **Signing & Capabilities**, and run on your phone. The
+phone has to be able to reach the box — the same network, or a VPN such as Tailscale.
 
 ## Backup & export
 
