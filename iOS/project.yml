@@ -1,0 +1,113 @@
+# The Xcode project for Vision on iPhone and iPad, generated with XcodeGen (brew install xcodegen):
+#
+#   cd iOS && xcodegen && open Vision.xcodeproj
+#
+# The app shares the harness's own code with the Mac app rather than reimplementing it: the files listed under
+# VisionHarnessCore below are the same ones the Swift package builds for macOS (the Spark Swapper client, the
+# OpenAI-compatible client, certificate pinning, picture roll-off, attachment handling, prompt history). Only the
+# files with nothing Mac-specific in them are listed — no shell, no file tools, no screen control.
+name: Vision
+options:
+  bundleIdPrefix: com.503cm
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    MARKETING_VERSION: "0.20.0"
+    CURRENT_PROJECT_VERSION: "20"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  VisionHarnessCore:
+    type: library.static
+    platform: iOS
+    sources:
+      - path: ../Sources/VisionHarnessCore/AppIdentity.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/AttachmentDigest.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/CertificatePinning.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/Compaction.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/IdentityMigration.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/IsolatedRun.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/JSONValue.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/Markdown.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/Models.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/OpenAIClient.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/PlanCatalog.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/PromptHistory.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/RequestRetry.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/RoutePrivacy.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/SparkSwapper.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/SwapperConnections.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/VisionBudget.swift
+        group: VisionHarnessCore
+      - path: ../Sources/VisionHarnessCore/XMLToolCalls.swift
+        group: VisionHarnessCore
+    settings:
+      base:
+        PRODUCT_NAME: VisionHarnessCore
+        SWIFT_VERSION: "6.0"
+        SKIP_INSTALL: YES
+        TARGETED_DEVICE_FAMILY: "1,2"
+  Vision:
+    type: application
+    platform: iOS
+    sources:
+      - path: Vision
+    dependencies:
+      - target: VisionHarnessCore
+    scheme: {}
+    info:
+      path: Vision/Info.plist
+      properties:
+        CFBundleDisplayName: Vision
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        LSRequiresIPhoneOS: true
+        ITSAppUsesNonExemptEncryption: false
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        # A Spark Swapper is a box on your own network (or your tailnet) with a self-signed certificate. The
+        # app trusts exactly the certificate the connection code names (or the one you approved), nothing else.
+        NSAppTransportSecurity:
+          NSAllowsArbitraryLoads: true
+          NSAllowsLocalNetworking: true
+        NSLocalNetworkUsageDescription: Vision connects to the Spark Swapper boxes you add (a DGX Spark or Strix Halo on your network) to chat with the model they serve and to switch models.
+        NSPhotoLibraryUsageDescription: Vision attaches the photos you pick to a prompt.
+        NSCameraUsageDescription: Vision attaches a photo you take to a prompt.
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.503cm.vision.ios
+        PRODUCT_NAME: Vision
+        SWIFT_VERSION: "5.0"
+        SWIFT_STRICT_CONCURRENCY: minimal
+        TARGETED_DEVICE_FAMILY: "1,2"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
+        GENERATE_INFOPLIST_FILE: NO

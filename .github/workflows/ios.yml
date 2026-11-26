@@ -1,0 +1,57 @@
+name: iOS IPA
+
+# Build Vision for iPhone on every branch push and pull request, and keep the IPA as a build artifact
+# (Actions ▸ this run ▸ Artifacts ▸ Vision-iOS-ipa). The IPA is unsigned: install it with a sideloading
+# tool that signs with your own Apple ID (AltStore, Sideloadly), or run the Xcode project on your phone.
+# Version tags attach the same IPA to the GitHub release (release.yml).
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ipa:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          command -v xcodegen >/dev/null || brew install xcodegen
+          xcodegen --version
+
+      - name: Build the IPA
+        run: bash iOS/build-ipa.sh
+
+      - name: Check the IPA
+        run: |
+          set -euo pipefail
+          cd iOS/build
+          unzip -q Vision.ipa -d check
+          app="check/Payload/Vision.app"
+          plutil -lint "$app/Info.plist"
+          [ "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")" = "com.503cm.vision.ios" ]
+          /usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app/Info.plist"
+          exe="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$app/Info.plist")"
+          [ -f "$app/$exe" ] || { echo "missing executable $exe" >&2; exit 1; }
+          lipo -archs "$app/$exe" | grep -q arm64
+          ls -lh Vision.ipa
+
+      - name: Keep the IPA as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-iOS-ipa
+          path: iOS/build/Vision.ipa
+          if-no-files-found: error

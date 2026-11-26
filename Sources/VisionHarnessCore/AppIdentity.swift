@@ -53,7 +53,16 @@ public enum AppIdentity {
 
     /// How the app names itself to the servers it calls: "Vision/0.15.0 (macOS)". Some plans (Kimi Code) check
     /// which app is calling: the app says honestly what it is, and never borrows another tool's identity.
-    public static var userAgent: String { "Vision/\(version) (macOS)" }
+    public static var userAgent: String { "Vision/\(version) (\(platformName))" }
+
+    /// The system the app runs on, as it names it to servers: the Mac app, or the iPhone and iPad app.
+    public static var platformName: String {
+        #if os(iOS)
+        "iOS"
+        #else
+        "macOS"
+        #endif
+    }
 
     /// The Amazon Bedrock client's user agent: "Vision-Mac/0.15.0".
     public static var bedrockUserAgent: String {

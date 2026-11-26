@@ -1,4 +1,4 @@
-name: Release DMG
+name: Release DMG and IPA
 
 # Publish the distributable .dmg to the GitHub Releases section.
 #
@@ -35,6 +35,11 @@ jobs:
       - name: Build the app bundle + DMG
         run: bash bundle.sh release
 
+      - name: Build the iPhone app (unsigned IPA)
+        run: |
+          command -v xcodegen >/dev/null || brew install xcodegen
+          bash iOS/build-ipa.sh
+
       - name: Read version from Info.plist
         id: meta
         run: |
@@ -57,6 +62,13 @@ jobs:
         with:
           name: Vision-macOS-${{ steps.meta.outputs.tag }}
           path: build/Vision.dmg
+          if-no-files-found: error
+
+      - name: Keep the IPA as an artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-iOS-${{ steps.meta.outputs.tag }}
+          path: iOS/build/Vision.ipa
           if-no-files-found: error
 
       - name: Create / update the GitHub release
@@ -82,4 +94,5 @@ jobs:
             --title "${{ steps.meta.outputs.title }}" \
             --target "${{ steps.meta.outputs.target }}" \
             --notes-file "$NOTES" \
-            build/Vision.dmg
+            build/Vision.dmg \
+            iOS/build/Vision.ipa
