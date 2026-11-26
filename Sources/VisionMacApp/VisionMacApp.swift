@@ -191,8 +191,11 @@ struct AppCommands: Commands {
                 .disabled(model.selectedSession == nil || !model.guardian.isSignedIn)
             Button("Credentials Vault…") { model.showVault = true }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
-            Button("Prompt History…") { model.showPromptHistory = true }
+            Button("Prompt History…") { model.openPromptHistory(chatID: nil) }
                 .keyboardShortcut("p", modifiers: [.command, .control])
+            Button("This Chat's Prompts…") { model.openPromptHistory(chatID: model.selectedSession?.id) }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+                .disabled(model.selectedSession == nil)
             Button("Reload Project Context") { model.transport.refreshProjectContext() }
                 .disabled(model.project == nil)
         }
@@ -211,6 +214,11 @@ struct AppCommands: Commands {
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("Toggle File Tree") { model.code.showTree.toggle() }
                 .keyboardShortcut("b", modifiers: .command)
+            Button("Toggle Editor") {
+                model.mode = .code
+                model.toggleEditorPane()
+            }
+            .keyboardShortcut("e", modifiers: [.command, .option])
             Button("Toggle Terminal") {
                 model.mode = .code
                 model.code.toggleTerminal()
@@ -243,7 +251,8 @@ struct RootView: View {
             HStack(spacing: 0) {
                 detail
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if model.config.planPanelOpen {
+                // The plan and the task queue share the right edge: the queue, while it is open, is in front.
+                if model.config.planPanelOpen, !model.showQueuePanel {
                     PlanPanelColumn()
                         .transition(.move(edge: .trailing))
                 }
@@ -441,7 +450,7 @@ struct RootView: View {
             } label: {
                 Label("Plan", systemImage: "checklist")
             }
-            .help(model.config.planPanelOpen ? "Hide the plan (⇧⌘P)" : "Show the plan (⇧⌘P)")
+            .help(model.config.planPanelOpen && !model.showQueuePanel ? "Hide the plan (⇧⌘P)" : "Show the plan (⇧⌘P)")
         }
 
         ToolbarItem {

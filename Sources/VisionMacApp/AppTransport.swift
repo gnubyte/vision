@@ -66,6 +66,8 @@ public final class AppTransport {
     /// agent, automation), with its outcome, duration and artifacts. Backs the
     /// Prompt History viewer and the model's own introspection tools.
     @ObservationIgnored public let promptHistory: PromptHistoryStore
+    /// Every file and picture a prompt carried, and every picture rolled off a request, kept by content.
+    @ObservationIgnored public let attachments: AttachmentStore
     /// The git-keep-in-sync layer for open projects (fakeable in tests).
     @ObservationIgnored var gitSync: GitSync?
     /// Workspace path → when its branch was last auto-synced (throttles the
@@ -200,6 +202,8 @@ public final class AppTransport {
         var folders: [String] = []
         var agentMode = false
         var agentSkills = false
+        /// How many pictures a request to this route may carry (the setting, or what the server said).
+        var imageLimit = ImageBudget.defaultMaxImages
     }
 
     /// Everything about skills one turn needs: what exists, what's on, and the prompt text.
@@ -278,6 +282,8 @@ public final class AppTransport {
         self.memory = memory ?? HarnessMemory(appSupport: skillLocations.appSupport)
         self.promptHistory = PromptHistoryStore(
             fileURL: skillLocations.appSupport.appendingPathComponent("prompt-history.json"))
+        self.attachments = AttachmentStore(
+            root: skillLocations.appSupport.appendingPathComponent("attachments", isDirectory: true))
         self.draftsDirectory = skillLocations.appSupport.appendingPathComponent("drafts", isDirectory: true)
         self.gitSync = GitSync(runner: GitSync.processRunner())
         self.phaseRunner = TurnPhaseRunner(
@@ -312,8 +318,12 @@ public final class AppTransport {
     You are a capable coding agent running inside a native macOS app, working in the user's project folder.
 
     Use the tools to read, write, and search files and to run shell commands. Prefer small, verifiable steps:
-    read before you edit, and check your work after you change something. When a task needs more than a
-    couple of steps, track it with `todo_write` so the user can see the plan.
+    read before you edit, and check your work after you change something.
+
+    Match the effort to the ask. A question, an opinion, a "what if", or a small task gets a direct answer:
+    look at what you need to with the tools, then reply in plain prose — no plan, no step list, no ceremony.
+    Only when the work really is several distinct steps (a feature, a refactor across files, a long
+    investigation) lay it out with `todo_write` first and keep it updated, so the user can see the plan.
 
     Parallel and background work: for a well-scoped side task, launch a subagent with `agent` — pick an \
     `agent_type` (explore: read-only research; plan; review; worker: makes changes). To fan several \
@@ -871,7 +881,10 @@ public final class AppTransport {
             promptHistory.add(.init(chatID: vm.id, chatTitle: vm.title,
                                     mode: promptMode(for: vm), text: task.goalText,
                                     turnID: vm.turnPhase?.turnID,
-                                    attachments: (task.attachments ?? []).map { $0.name }))
+                                    attachments: (task.attachments ?? []).map { $0.name },
+                                    attachmentFiles: keep(task.attachments ?? [])))
+            // A queue task is planned work: it gets the plan card.
+            markPlanned(vm)
         }
         do {
             let outcome = try await goalLoop(vm, goal: task.goalText, auto: true, resuming: resuming,
@@ -1199,6 +1212,17 @@ public final class AppTransport {
                                         retry: retryPolicy)
         // Subagents of a queue task or a /goal keep off servers that are for interactive use only.
         engineConfig.unattended = unattended
+        // Pictures: how many travel per request, where the rolled-off ones are kept, and what to remember
+        // when the server names its own limit.
+        let routeProfile = (client as? any ProviderClient)?.profile
+        engineConfig.imageBudget = ImageBudget.forRoute(maxImages: imageLimit(for: routeProfile), contextWindow: window)
+        engineConfig.attachmentStore = attachments
+        engineConfig.nativeFileAttachments = routeProfile.map { $0.kind == .openAI || $0.kind == .bedrock } ?? false
+        if let routeID = routeProfile?.routeID {
+            engineConfig.onImageLimit = { [weak self] limit in
+                Task { @MainActor [weak self] in self?.learnImageLimit(limit, routeID: routeID) }
+            }
+        }
         let engine = Engine(
             client: client,
             registry: registry,
@@ -1214,7 +1238,11 @@ public final class AppTransport {
                 Task { @MainActor [weak self] in
                     guard let self, let vm = self.sessions.first(where: { $0.id == sessionID }) else { return }
                     vm.setTodos(todos)
-                    if !todos.isEmpty { self.planAppeared(in: vm) }
+                    if !todos.isEmpty {
+                        // One item is a note, not a plan.
+                        if todos.count > 1 { self.markPlanned(vm) }
+                        self.planAppeared(in: vm)
+                    }
                 }
             },
             compaction: { [weak self] used, messages in
@@ -1703,10 +1731,27 @@ public final class AppTransport {
     /// same thing the model sees.
     private func phasesBegin(_ vm: SessionVM, prompt: String) {
         guard vm.phasesEnabled else { return }
+        // Whether the turn shows the plan card: always, when the user wants every turn planned; otherwise
+        // only once the work turns out to be planned (`markPlanned`). The phases themselves still run
+        // underneath — they time the turn and feed the prompt history.
+        vm.turnPlanned = config.turnStyle == .alwaysPlan
         var state = TurnPhaseState(loopbackCap: phaseLoopbackCap)
         let files = projectContext.map { Self.countProjectFiles($0.root) } ?? 0
         phaseRunner.begin(&state, prompt: prompt, projectFiles: files)
         vm.turnPhase = state
+    }
+
+    /// The turn turned out to be planned work — the agent wrote a step list or proposed a plan, or it is a goal
+    /// or a queue task: from here it shows the plan card. A question or a small task never gets here, and is
+    /// simply answered. "Just talk" keeps the card away whatever happens.
+    private func markPlanned(_ vm: SessionVM) {
+        guard config.turnStyle != .conversational, !vm.turnPlanned else { return }
+        vm.turnPlanned = true
+    }
+
+    /// Keep what a prompt carried on disk, so the prompt history can open it again.
+    private func keep(_ items: [MessageAttachment]) -> [AttachmentReference]? {
+        items.isEmpty ? nil : items.map { attachments.reference($0) }
     }
 
     /// The plan settled: first todo list of the turn, or the first paragraph
@@ -1734,7 +1779,7 @@ public final class AppTransport {
         }
         phaseRunner.planSettled(&state, plan: draftText, stepsPlanned: max(vm.todos.count, 1))
         vm.turnPhase = state
-        if let eta = state.etaSeconds {
+        if vm.turnPlanned, let eta = state.etaSeconds {
             vm.activity = "Planning done — estimated \(TurnPhaseState.phrase(eta)). Executing…"
         }
     }
@@ -1766,7 +1811,7 @@ public final class AppTransport {
         let before = state.etaSeconds
         phaseRunner.refine(&state, stepsPlanned: vm.todos.count)
         vm.turnPhase = state
-        if let before, let after = state.etaSeconds, after > before * 1.15 {
+        if vm.turnPlanned, let before, let after = state.etaSeconds, after > before * 1.15 {
             vm.activity = "The plan grew to \(vm.todos.count) steps — estimate now \(TurnPhaseState.phrase(after))."
         }
     }
@@ -1955,7 +2000,10 @@ public final class AppTransport {
             promptHistory.add(.init(chatID: sessionID, chatTitle: vm.title,
                                     mode: promptMode(for: vm), text: text,
                                     turnID: vm.turnPhase?.turnID,
-                                    attachments: attachments.map { $0.name }))
+                                    attachments: attachments.map { $0.name },
+                                    attachmentFiles: keep(attachments)))
+            // A goal is planned work from its first round.
+            if goal != nil { markPlanned(vm) }
         }
         defer {
             vm.running = false
@@ -2441,7 +2489,7 @@ public final class AppTransport {
                             vision: visionOn(for: profile), vault: vault.revision, agents: agentsStamp(for: vm),
                             backups: backups, servers: subagentServerEntries, unattended: unattended,
                             folders: vm.additionalFolders, agentMode: vm.isAgent,
-                            agentSkills: config.agentSavesSkills)
+                            agentSkills: config.agentSavesSkills, imageLimit: imageLimit(for: profile))
         if let previous = engineKeys[sessionID], previous.profile.model != profile.model {
             vm.note("The server is now serving `\(profile.model)` (was `\(previous.profile.model)`) — switched to it, \(window.formatted())-token window.")
         }
@@ -2590,6 +2638,7 @@ public final class AppTransport {
             if let plan = calls.last(where: { $0.name == ExitPlanModeTool.name }).flatMap({ JSONArgs.string($0.arguments, "plan") }),
                !plan.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                 vm.proposedPlan = plan
+                markPlanned(vm)
                 planAppeared(in: vm)
             }
             // Fold a turn's complete text if deltas never arrived, then close
@@ -2651,6 +2700,7 @@ public final class AppTransport {
 
         case .todos(let todos):
             vm.setTodos(todos)
+            if todos.count > 1 { markPlanned(vm) }
             // The todo list is the plan: settle (or refine) the estimate on it.
             if vm.turnPhase?.phase == .planning {
                 phasesPlanSettled(vm)
@@ -2680,6 +2730,27 @@ public final class AppTransport {
 
     /// Routes whose server rejected an image (learned at runtime).
     @ObservationIgnored private var noVisionRoutes: Set<String> = []
+
+    /// How many pictures a request to this route may carry: what its server said, else the setting.
+    func imageLimit(for profile: ProviderProfile?) -> Int {
+        let setting = max(1, config.maxImagesPerRequest)
+        guard let learned = profile.flatMap({ config.learnedImageLimits[$0.routeID] }) else { return setting }
+        return min(setting, max(0, learned))
+    }
+
+    /// A server refused a request for carrying too many pictures and the engine carried on with fewer: keep
+    /// the number for the route, and say so once in the chats that use it.
+    func learnImageLimit(_ limit: Int, routeID: String) {
+        guard config.learnedImageLimits[routeID] != limit else { return }
+        config.learnedImageLimits[routeID] = limit
+        let name = routeID.split(separator: "|").last.map(String.init) ?? routeID
+        let text = limit > 0
+            ? "`\(name)` takes \(limit) picture\(limit == 1 ? "" : "s") per request. Vision keeps the newest in view and rolls older ones off — they stay on disk, and the model can ask to see one again."
+            : "`\(name)` refused pictures, so they are no longer sent to it."
+        for vm in sessions where vm.running && engineKeys[vm.id]?.profile.routeID == routeID {
+            vm.note(text)
+        }
+    }
 
     func visionOn(for profile: ProviderProfile?) -> Bool {
         guard let profile else { return true }
@@ -3012,7 +3083,8 @@ public final class AppTransport {
         // Automations surface, with its outcome and duration stamped after.
         let ledgerRecord = promptHistory.add(.init(
             chatID: vm.id, chatTitle: vm.title, mode: .automation, text: automation.prompt,
-            attachments: (automation.attachments ?? []).map { $0.name }))
+            attachments: (automation.attachments ?? []).map { $0.name },
+            attachmentFiles: keep(automation.attachments ?? [])))
         let task = Task { [weak self] in
             guard let self else { return }
             defer {

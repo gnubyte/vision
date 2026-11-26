@@ -207,6 +207,12 @@ public final class SessionVM: Identifiable {
     public var turnPhase: TurnPhaseState?
     /// Whether the phases run at all for this chat (off: a plain question gets no ceremony).
     public var phasesEnabled = true
+    /// Whether the turn in `turnPhase` shows its plan card. A question or a small task doesn't: it is answered
+    /// like a conversation. Set when the work turns out to be planned (a step list, a goal, a queue task), or
+    /// from the start when the user asked for every turn to be planned.
+    public var turnPlanned = false
+    /// The plan card to show, if the turn earned one.
+    public var visibleTurnPhase: TurnPhaseState? { turnPlanned ? turnPhase : nil }
 
     /// The user prompts sent in this chat, with when they landed and where their results live.
     /// Backs the prompt timeline (Prompt History); oldest first.

@@ -75,6 +75,30 @@ private struct GeneralSettings: View {
                 }
             }
 
+            Section("How the agent answers") {
+                Picker("Planning", selection: Binding(
+                    get: { model.config.turnStyle },
+                    set: { model.config.turnStyle = $0 })) {
+                    ForEach(TurnStyle.allCases, id: \.self) { style in
+                        Text(style.label).tag(style)
+                    }
+                }
+                Text(model.config.turnStyle.detail)
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Stepper(value: Binding(
+                    get: { model.config.maxImagesPerRequest },
+                    set: { model.config.maxImagesPerRequest = $0 }), in: 1...32) {
+                    Text("Pictures per request: \(model.config.maxImagesPerRequest)")
+                }
+                Text("How many screenshots, attached pictures and PDF pages travel with one request. The newest stay in view; older ones roll off to disk and the model can ask for one again. A server that takes fewer says so once and Vision remembers it for that model\(model.config.learnedImageLimits.isEmpty ? "." : " (\(model.config.learnedImageLimits.count) learned).")")
+                    .font(.caption).foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                if !model.config.learnedImageLimits.isEmpty {
+                    Button("Forget learned picture limits") { model.config.learnedImageLimits = [:] }
+                }
+            }
+
             Section("Harness") {
                 Toggle(isOn: Binding(
                     get: { model.config.daemonMode },
@@ -587,6 +611,13 @@ private struct EditorSettings: View {
                             .font(Theme.metaFont).monospacedDigit().frame(width: 34)
                     }
                 }
+                Picker("Show the editor in code mode", selection: $config.editorPane) {
+                    ForEach(EditorPaneMode.allCases, id: \.self) { mode in
+                        Text(mode.label).tag(mode)
+                    }
+                }
+                Text("“When a file is open” gives the room to the agent until you open something. The toolbar's editor button (⌥⌘E) hides or shows it at any time.")
+                    .font(.caption).foregroundStyle(.secondary)
                 Toggle("Wrap long lines", isOn: $config.editorWraps)
                 Toggle("Show line numbers", isOn: $config.editorLineNumbers)
             }

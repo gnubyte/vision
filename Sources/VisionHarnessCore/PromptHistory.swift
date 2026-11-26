@@ -96,11 +96,14 @@ public struct PromptHistoryRecord: Codable, Identifiable, Hashable, Sendable {
     public var attachments: [String]
     /// The model that served the turn, when known.
     public var model: String?
+    /// The attachments themselves, kept on disk (`AttachmentStore`), so a file or screenshot a prompt carried
+    /// can be opened again from the history. Nil on records written before attachments were kept.
+    public var attachmentFiles: [AttachmentReference]?
 
     public init(id: String = UUID().uuidString, chatID: String, chatTitle: String, mode: Mode,
                 text: String, at: Date = .now, turnID: String? = nil, duration: TimeInterval? = nil,
                 outcome: Outcome = .working, changedFiles: [String] = [], attachments: [String] = [],
-                model: String? = nil) {
+                model: String? = nil, attachmentFiles: [AttachmentReference]? = nil) {
         self.id = id
         self.chatID = chatID
         self.chatTitle = chatTitle
@@ -113,6 +116,161 @@ public struct PromptHistoryRecord: Codable, Identifiable, Hashable, Sendable {
         self.changedFiles = changedFiles
         self.attachments = attachments
         self.model = model
+        self.attachmentFiles = attachmentFiles
+    }
+}
+
+// MARK: - Reading the history: order, and getting it out
+
+/// The order a list of prompts is shown or exported in.
+public enum PromptHistorySort: String, CaseIterable, Sendable {
+    case newestFirst, oldestFirst, longestFirst
+
+    public var label: String {
+        switch self {
+        case .newestFirst: "Newest first"
+        case .oldestFirst: "Oldest first"
+        case .longestFirst: "Longest running"
+        }
+    }
+
+    public func apply(_ records: [PromptHistoryRecord]) -> [PromptHistoryRecord] {
+        switch self {
+        case .newestFirst: records.sorted { $0.at > $1.at }
+        case .oldestFirst: records.sorted { $0.at < $1.at }
+        case .longestFirst: records.sorted { ($0.duration ?? -1, $0.at) > ($1.duration ?? -1, $1.at) }
+        }
+    }
+}
+
+/// A list of prompts as text someone can paste elsewhere and analyse: Markdown to read, CSV for a spreadsheet,
+/// JSON for a script. Every form carries the timestamp (ISO 8601, with the time zone), the chat, the outcome, how
+/// long the turn took, and the names and kept paths of what was attached.
+public enum PromptHistoryExport {
+    public enum Format: String, CaseIterable, Sendable {
+        case markdown, csv, json
+
+        public var label: String {
+            switch self {
+            case .markdown: "Markdown"
+            case .csv: "CSV"
+            case .json: "JSON"
+            }
+        }
+        public var fileExtension: String {
+            switch self {
+            case .markdown: "md"
+            case .csv: "csv"
+            case .json: "json"
+            }
+        }
+    }
+
+    public static func render(_ records: [PromptHistoryRecord], as format: Format,
+                              timeZone: TimeZone = .current) -> String {
+        switch format {
+        case .markdown: markdown(records, timeZone: timeZone)
+        case .csv: csv(records, timeZone: timeZone)
+        case .json: json(records, timeZone: timeZone)
+        }
+    }
+
+    static func stamp(_ date: Date, timeZone: TimeZone) -> String {
+        let formatter = ISO8601DateFormatter()
+        formatter.formatOptions = [.withInternetDateTime]
+        formatter.timeZone = timeZone
+        return formatter.string(from: date)
+    }
+
+    static func attachmentNames(_ record: PromptHistoryRecord) -> [String] {
+        if let files = record.attachmentFiles, !files.isEmpty { return files.map(\.name) }
+        return record.attachments
+    }
+
+    static func durationText(_ seconds: TimeInterval?) -> String {
+        guard let seconds, seconds > 0 else { return "" }
+        let whole = Int(seconds.rounded())
+        if whole < 60 { return "\(whole)s" }
+        if whole < 3_600 { return "\(whole / 60)m \(whole % 60)s" }
+        return "\(whole / 3_600)h \((whole % 3_600) / 60)m"
+    }
+
+    public static func markdown(_ records: [PromptHistoryRecord], timeZone: TimeZone = .current) -> String {
+        guard !records.isEmpty else { return "No prompts." }
+        let chats = Set(records.map(\.chatID))
+        var out: [String] = []
+        if chats.count == 1, let title = records.first?.chatTitle {
+            out.append("# Prompts — \(title)")
+        } else {
+            out.append("# Prompts — \(chats.count) chats")
+        }
+        out.append("\(records.count) prompt\(records.count == 1 ? "" : "s")")
+        for (index, record) in records.enumerated() {
+            var meta = [stamp(record.at, timeZone: timeZone), record.mode.label, record.outcome.label]
+            let took = durationText(record.duration)
+            if !took.isEmpty { meta.append(took) }
+            if let model = record.model, !model.isEmpty { meta.append(model) }
+            if chats.count > 1 { meta.append(record.chatTitle) }
+            var block = "## \(index + 1). \(meta.joined(separator: " · "))\n\n\(record.text)"
+            if let files = record.attachmentFiles, !files.isEmpty {
+                block += "\n\nAttached:\n" + files.map { "- \($0.name)" + ($0.path.map { " — \($0)" } ?? "") }
+                    .joined(separator: "\n")
+            } else if !record.attachments.isEmpty {
+                block += "\n\nAttached: " + record.attachments.joined(separator: ", ")
+            }
+            if !record.changedFiles.isEmpty {
+                block += "\n\nChanged: " + record.changedFiles.joined(separator: ", ")
+            }
+            out.append(block)
+        }
+        return out.joined(separator: "\n\n") + "\n"
+    }
+
+    public static func csv(_ records: [PromptHistoryRecord], timeZone: TimeZone = .current) -> String {
+        func cell(_ text: String) -> String {
+            text.contains(where: { $0 == "," || $0 == "\"" || $0.isNewline })
+                ? "\"" + text.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : text
+        }
+        var lines = ["timestamp,chat,mode,outcome,duration_seconds,model,attachments,changed_files,prompt"]
+        for record in records {
+            lines.append([
+                stamp(record.at, timeZone: timeZone), record.chatTitle, record.mode.rawValue, record.outcome.label,
+                record.duration.map { String(Int($0.rounded())) } ?? "", record.model ?? "",
+                attachmentNames(record).joined(separator: "; "), record.changedFiles.joined(separator: "; "),
+                record.text,
+            ].map(cell).joined(separator: ","))
+        }
+        return lines.joined(separator: "\n") + "\n"
+    }
+
+    public static func json(_ records: [PromptHistoryRecord], timeZone: TimeZone = .current) -> String {
+        let rows: [[String: Any]] = records.map { record in
+            var row: [String: Any] = [
+                "timestamp": stamp(record.at, timeZone: timeZone),
+                "chat": record.chatTitle,
+                "chat_id": record.chatID,
+                "mode": record.mode.rawValue,
+                "outcome": record.outcome.label,
+                "prompt": record.text,
+            ]
+            if let duration = record.duration { row["duration_seconds"] = (duration * 10).rounded() / 10 }
+            if let model = record.model { row["model"] = model }
+            if let files = record.attachmentFiles, !files.isEmpty {
+                row["attachments"] = files.map { file -> [String: Any] in
+                    var entry: [String: Any] = ["name": file.name, "kind": file.kind.rawValue, "bytes": file.bytes]
+                    if let path = file.path { entry["path"] = path }
+                    return entry
+                }
+            } else if !record.attachments.isEmpty {
+                row["attachments"] = record.attachments.map { ["name": $0] }
+            }
+            if !record.changedFiles.isEmpty { row["changed_files"] = record.changedFiles }
+            return row
+        }
+        guard let data = try? JSONSerialization.data(withJSONObject: rows,
+                                                     options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]),
+              let text = String(data: data, encoding: .utf8) else { return "[]" }
+        return text + "\n"
     }
 }
 
@@ -227,16 +385,23 @@ public final class PromptHistoryStore: @unchecked Sendable {
 
     /// Newest first. `query` matches the prompt text and the chat title;
     /// `mode` nil means every surface.
-    public func search(query: String, mode: PromptHistoryRecord.Mode? = nil, limit: Int = 200) -> [PromptHistoryRecord] {
+    public func search(query: String, mode: PromptHistoryRecord.Mode? = nil, chatID: String? = nil,
+                       limit: Int = 200) -> [PromptHistoryRecord] {
         lock.withLock {
             let words = query.lowercased().split(separator: " ").map(String.init)
             return records.reversed().filter { record in
                 guard mode == nil || record.mode == mode else { return false }
+                guard chatID == nil || record.chatID == chatID else { return false }
                 guard !words.isEmpty else { return true }
-                let haystack = (record.text + " " + record.chatTitle).lowercased()
+                let haystack = ([record.text, record.chatTitle] + record.attachments).joined(separator: " ").lowercased()
                 return words.allSatisfy { haystack.contains($0) }
             }.prefix(limit).map { $0 }
         }
+    }
+
+    /// One chat's prompts, oldest first.
+    public func records(inChat chatID: String) -> [PromptHistoryRecord] {
+        lock.withLock { records.filter { $0.chatID == chatID } }
     }
 
     public func record(withID id: String) -> PromptHistoryRecord? {

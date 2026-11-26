@@ -2,14 +2,40 @@ import SwiftUI
 import AppKit
 import VisionHarnessCore
 
-/// Code mode: the project navigator, a tabbed editor, an integrated terminal,
-/// and the agent alongside — the layout a VS Code user expects, with the chat
-/// where the panel would be.
+/// Code mode: the project navigator and the agent, with a tabbed editor and an
+/// integrated terminal between them when they are wanted. The editor is optional:
+/// by default it is there while a file is open and gone when none is, so the
+/// agent has the room instead of an empty "No file open" pane; the toolbar's
+/// editor button (⌥⌘E) hides it outright or brings it back.
 struct CodeModeView: View {
     @Environment(AppModel.self) private var model
     @State private var chatVisible = true
 
     private var code: CodeWorkspace { model.code }
+
+    /// Whether the editor pane is showing (see `EditorPaneMode`).
+    private var editorVisible: Bool {
+        Self.editorVisible(mode: model.config.editorPane, openFiles: code.buffers.count)
+    }
+
+    /// The editor pane's rule, on its own so it can be tested.
+    nonisolated static func editorVisible(mode: EditorPaneMode, openFiles: Int) -> Bool {
+        switch mode {
+        case .always: true
+        case .hidden: false
+        case .whenFileOpen: openFiles > 0
+        }
+    }
+
+    /// The mode the editor button moves to: it always does what it looks like it will — hide a pane that is
+    /// showing, show one that is not (an empty one included, when no file is open).
+    nonisolated static func toggledEditorMode(from mode: EditorPaneMode, openFiles: Int) -> EditorPaneMode {
+        if editorVisible(mode: mode, openFiles: openFiles) { return .hidden }
+        return openFiles > 0 ? .whenFileOpen : .always
+    }
+
+    /// The editor or the terminal sits between the tree and the agent.
+    private var centerVisible: Bool { editorVisible || code.terminalVisible }
 
     var body: some View {
         // Split views size children to their ideal height unless told to
@@ -21,23 +47,34 @@ struct CodeModeView: View {
                            maxHeight: .infinity)
             }
 
-            VSplitView {
-                EditorArea()
-                    .frame(minHeight: 140, maxHeight: .infinity)
-                if code.terminalVisible {
-                    TerminalPanel()
-                        .frame(minHeight: 100, idealHeight: 240, maxHeight: .infinity)
+            if centerVisible {
+                VSplitView {
+                    if editorVisible {
+                        EditorArea()
+                            .frame(minHeight: 140, maxHeight: .infinity)
+                    }
+                    if code.terminalVisible {
+                        TerminalPanel()
+                            .frame(minHeight: 100, idealHeight: editorVisible ? 240 : nil, maxHeight: .infinity)
+                    }
                 }
+                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
             }
-            .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
 
-            if chatVisible {
+            // With nothing in the middle the agent takes the whole width (and can't be hidden: something
+            // has to be on screen).
+            if chatVisible || !centerVisible {
                 chatPane
-                    .frame(minWidth: 320, idealWidth: 400, maxWidth: 640,
+                    .frame(minWidth: 320, idealWidth: centerVisible ? 400 : nil,
+                           maxWidth: centerVisible ? 640 : .infinity,
                            maxHeight: .infinity)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .onChange(of: code.editorRequests) { _, _ in
+            // A file was opened by hand (the tree, a "files changed" chip): that is asking to see it.
+            if model.config.editorPane == .hidden { model.config.editorPane = .whenFileOpen }
+        }
         .toolbar {
             ToolbarItemGroup(placement: .automatic) {
                 Button {
@@ -45,7 +82,14 @@ struct CodeModeView: View {
                 } label: {
                     Image(systemName: "sidebar.squares.left")
                 }
-                .help("Show or hide the file tree")
+                .help("Show or hide the file tree (⌘B)")
+
+                Button {
+                    model.toggleEditorPane()
+                } label: {
+                    Image(systemName: editorVisible ? "doc.plaintext.fill" : "doc.plaintext")
+                }
+                .help(editorVisible ? "Hide the editor (⌥⌘E)" : "Show the editor (⌥⌘E)")
 
                 Button {
                     code.toggleTerminal()
@@ -60,6 +104,7 @@ struct CodeModeView: View {
                     Image(systemName: chatVisible ? "sidebar.right" : "bubble.left.and.bubble.right")
                 }
                 .help("Show or hide the agent")
+                .disabled(!centerVisible)
             }
         }
         .alert("Something went wrong",

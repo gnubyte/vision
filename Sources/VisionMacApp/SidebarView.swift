@@ -96,7 +96,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             navRow("Open Folder…", icon: "folder.badge.plus") { model.chooseProject() }
             navRow("Prompt History", icon: "clock.arrow.circlepath", count: model.transport.promptHistory.count) {
-                model.showPromptHistory = true
+                model.openPromptHistory(chatID: nil)
             }
             navRow("Chat Archive", icon: "archivebox", count: transport.archive.chats.count) { model.showArchive = true }
             navRow("Memory & Skills", icon: "brain") { model.showMemoryAndSkills = true }
