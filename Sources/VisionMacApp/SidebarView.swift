@@ -32,6 +32,8 @@ struct SidebarView: View {
                 .padding(.top, 6)
             if model.anythingRunning { runningBar.padding(.top, 6) }
             if !isAgentMode { sortPicker.padding(.horizontal, 10).padding(.top, 8) }
+            // A line under the buttons, so a list scrolled part-way reads as scrolled, not as tucked under them.
+            Divider().padding(.top, 8)
 
             List(selection: Binding(
                 get: { transport.selectedID },

@@ -62,6 +62,8 @@ project's `.dsh` folder and `DSH.md` keep working.
 open build/Vision.app
 ```
 
+Every push also keeps a ready-made build: **Actions ▸ CI ▸ the latest run ▸ Artifacts ▸ `Vision-macOS-dmg`**.
+
 Requires Swift 6 / Xcode 26 and macOS 14+. The iPhone app builds from the same sources — see
 [Vision for iPhone](#vision-for-iphone).
 
@@ -410,6 +412,9 @@ calls, the text is run through an XML parser that understands both the `<functio
   outcome, duration, model and attachments — as Markdown, CSV or JSON, or saves them to a file. Every file
   and screenshot a prompt carried is kept (`…/Vision/attachments`, stored once by content): its thumbnail
   is on the prompt's row, a click opens it, and **Attach again** puts it back on the composer.
+- **Small windows** (0.20). Code mode's panes fit the smallest window, and the file tree steps aside before
+  anything is cut off at the edges; the plan panel sits beside the work when both fit and over it when they
+  don't; the composer's context gauge shortens to "15K / 1M" in a narrow pane.
 - **Vision for iPhone** (0.20). See [below](#vision-for-iphone).
 
 ### Since 0.19
@@ -587,6 +592,10 @@ Spark Swapper itself in its demo mode (the real web service over HTTPS with its 
 app tokens, connection codes, status, switch jobs — with no GPU behind it) and a stand-in model server
 that, like vLLM, refuses more than two pictures a request, then in the simulator adds the box both ways,
 chats with too many pictures and with a PDF, and asks for a model switch.
+
+To keep the app in a repository of its own, `iOS/export-standalone.sh <folder>` writes it out with a copy of
+exactly the shared harness files it builds, its own `project.yml`, the IPA workflow and a README; CI builds
+that export on every push, so it is known to stand alone.
 
 The IPA is **unsigned**, and iOS only installs signed apps. Either re-sign it with a sideloading tool
 that signs with your own Apple ID (AltStore, Sideloadly), or run it from Xcode: `cd iOS && xcodegen &&
