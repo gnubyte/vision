@@ -2,6 +2,9 @@ import XCTest
 @testable import VisionMacApp
 @testable import VisionHarnessCore
 
+/// A two-item step list, as `todo_write` takes it.
+private let twoStepPlan = #"{"todos":[{"content":"Read the code","status":"in_progress"},{"content":"Change it","status":"pending"}]}"#
+
 /// A question or a small task is answered like a conversation; the plan card is for work that is planned. And
 /// what a prompt carried is kept, so the prompt history can open it again.
 @MainActor
@@ -52,8 +55,6 @@ final class ConversationalTurnTests: XCTestCase {
         try await Task.sleep(nanoseconds: 60_000_000)
     }
 
-    private static let twoSteps = #"{"todos":[{"content":"Read the code","status":"in_progress"},{"content":"Change it","status":"pending"}]}"#
-
     func testAQuestionIsJustAnswered() async throws {
         let vm = transport.newSession(cwd: nil)
         try await ask("what is a monad, roughly?", in: vm)
@@ -78,7 +79,7 @@ final class ConversationalTurnTests: XCTestCase {
 
     func testAStepListMakesItPlannedWork() async throws {
         FakeModelServer.reset { seen, _ in
-            seen.fresh ? .toolCall("todo_write", Self.twoSteps) : .text("Both steps are done.")
+            seen.fresh ? .toolCall("todo_write", twoStepPlan) : .text("Both steps are done.")
         }
         let vm = transport.newSession(cwd: nil)
         transport.selectedID = vm.id
@@ -110,7 +111,7 @@ final class ConversationalTurnTests: XCTestCase {
     func testJustTalkNeverShowsIt() async throws {
         config.turnStyle = .conversational
         FakeModelServer.reset { seen, _ in
-            seen.fresh ? .toolCall("todo_write", Self.twoSteps) : .text("Both steps are done.")
+            seen.fresh ? .toolCall("todo_write", twoStepPlan) : .text("Both steps are done.")
         }
         let vm = transport.newSession(cwd: nil)
         try await ask("refactor the parser and its tests", in: vm)
