@@ -67,6 +67,14 @@ jobs:
       - name: Live check against Spark Swapper
         run: bash iOS/live-check.sh
 
+      # The app as a repository of its own (iOS/export-standalone.sh) builds without the rest of this one.
+      - name: The standalone export builds
+        run: |
+          set -euo pipefail
+          bash iOS/export-standalone.sh "$RUNNER_TEMP/vision-ios"
+          cd "$RUNNER_TEMP/vision-ios"
+          bash build-ipa.sh
+
       - name: Keep the screenshots
         if: always()
         uses: actions/upload-artifact@v4

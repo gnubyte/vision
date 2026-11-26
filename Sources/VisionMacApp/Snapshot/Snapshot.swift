@@ -18,7 +18,8 @@ import VisionHarnessCore
 // permission, and fall back to drawing the window's views (`cacheDisplay`).
 //
 //   --snapshot <folder>         where the PNGs go (or VISION_SNAPSHOT_DIR)
-//   --snapshot-scenes a,b       only these scenes (chat, code, code-agent, prompt-history, setup, settings-models)
+//   --snapshot-scenes a,b       only these scenes (chat, code, code-agent, code-narrow, chat-new, prompt-history,
+//                               setup, settings-models, settings-general)
 //   --snapshot-live <profile>   run the chat for real first, on Amazon Bedrock with this AWS profile, and save what
 //                               happened as chat-transcript.json (the seeded chat is made from such a run)
 //   --snapshot-region <region>  the live run's Region (default us-west-2)
@@ -33,7 +34,16 @@ enum Snapshot {
         case codeAgent = "code-agent"
         /// The prompt history, opened on the main chat, with one prompt unfolded.
         case history = "prompt-history"
+        /// A brand-new chat: the starter and the composer, before anything is asked.
+        case newChat = "chat-new"
+        /// Code mode in a small window with a file open: the tightest the panes get.
+        case codeNarrow = "code-narrow"
+        /// Settings ▸ General.
+        case general = "settings-general"
     }
+
+    /// The small window the `code-narrow` scene uses.
+    static let narrowWindowSize = NSSize(width: 980, height: 640)
 
     struct Live: Equatable, Sendable {
         var profile: String
@@ -304,6 +314,26 @@ enum Snapshot {
             showMainChat(chatID, model)
             model.promptHistoryFocus = seedPromptHistory(chatID, model)
             model.openPromptHistory(chatID: chatID)
+        case .newChat:
+            model.mode = .chat
+            model.config.planPanelOpen = false
+            let fresh = model.newChat()
+            model.select(fresh.id)
+        case .codeNarrow:
+            model.config.planPanelOpen = false
+            model.config.editorPane = .whenFileOpen
+            showMainChat(chatID, model)
+            model.mode = .code
+            window.setContentSize(narrowWindowSize)
+            window.center()
+            if let project = model.project, let last = SnapshotSeed.codeSceneFiles.last {
+                model.code.reveal(project.appendingPathComponent(last))
+            }
+            model.code.terminalVisible = false
+        case .general:
+            model.mode = .chat
+            model.settingsTab = .general
+            model.showSettings = true
         }
     }
 
@@ -370,7 +400,12 @@ enum Snapshot {
     private static func unstage(_ scene: Scene, _ model: AppModel, window: NSWindow) async {
         switch scene {
         case .setup: model.showWizard = false
-        case .models: model.showSettings = false
+        case .models, .general: model.showSettings = false
+        case .newChat: break
+        case .codeNarrow:
+            model.mode = .chat
+            window.setContentSize(windowSize)
+            window.center()
         case .code, .codeAgent:
             model.mode = .chat
             setSidebarCollapsed(false, in: window)
@@ -475,8 +510,10 @@ enum Snapshot {
         }
         let filter = SCContentFilter(desktopIndependentWindow: target)
         let configuration = SCStreamConfiguration()
-        configuration.width = Int(window.frame.width * 2)
-        configuration.height = Int(window.frame.height * 2)
+        // At the display's own scale: on a 1x display (a CI runner) a 2x canvas leaves the window in one corner.
+        let scale = max(1, window.backingScaleFactor)
+        configuration.width = Int(window.frame.width * scale)
+        configuration.height = Int(window.frame.height * scale)
         configuration.showsCursor = false
         configuration.captureResolution = .best
         configuration.ignoreShadowsSingleWindow = true

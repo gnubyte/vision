@@ -11,21 +11,21 @@ import VisionHarnessCore
 ///   VISION_MODEL_API     http://127.0.0.1:<port>/v1
 @MainActor
 final class LiveSwapperTests: XCTestCase {
-    private var folder: URL!
-    private var suite: String!
-
-    override func setUp() async throws {
-        folder = FileManager.default.temporaryDirectory.appendingPathComponent("vision-live-\(UUID().uuidString)")
-        suite = "vision-live-\(UUID().uuidString)"
-    }
+    private var folders: [URL] = []
+    private var suites: [String] = []
 
     override func tearDown() async throws {
-        if let folder { try? FileManager.default.removeItem(at: folder) }
-        if let suite { UserDefaults.standard.removePersistentDomain(forName: suite) }
+        for folder in folders { try? FileManager.default.removeItem(at: folder) }
+        for suite in suites { UserDefaults.standard.removePersistentDomain(forName: suite) }
     }
 
+    /// A model with settings, secrets and storage of its own — a phone that has never seen the box.
     private func makeModel() -> MobileModel {
-        MobileModel(defaults: UserDefaults(suiteName: suite)!, secrets: MemorySecretStore(), storage: folder)
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("vision-live-\(UUID().uuidString)")
+        let suite = "vision-live-\(UUID().uuidString)"
+        folders.append(folder)
+        suites.append(suite)
+        return MobileModel(defaults: UserDefaults(suiteName: suite)!, secrets: MemorySecretStore(), storage: folder)
     }
 
     private func swapperAddress() throws -> String {
@@ -123,7 +123,7 @@ final class LiveSwapperTests: XCTestCase {
         let serving = try XCTUnwrap(status.activeModel)
         print("LIVE: connected by code to \(box.name), serving \(serving.title) (\(serving.served_id))")
 
-        // A fresh model reads the same box back from what was kept.
+        // Asking again with what was kept (the token, the pinned certificate) still works.
         await model.refreshAll()
         XCTAssertNil(model.boxErrors[box.id])
 
