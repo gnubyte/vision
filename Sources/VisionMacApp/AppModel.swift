@@ -88,6 +88,8 @@ final class AppModel {
     var showPromptHistory = false
     /// The chat the prompt history opens on (nil: every chat).
     var promptHistoryChatID: String?
+    /// A prompt (its record id) the history opens unfolded, once.
+    var promptHistoryFocus: String?
     /// Attachments a caller wants staged in the selected chat's composer (the prompt history's "Attach again").
     var pendingComposerAttachments: [MessageAttachment] = []
     /// The Amazon Bedrock guide, when it is open (nil = closed).

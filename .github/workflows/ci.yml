@@ -55,3 +55,35 @@ jobs:
           [ -x "$app/Contents/MacOS/$exe" ] || { echo "missing executable $exe" >&2; exit 1; }
           codesign --verify --deep "$app"
           ls -lh build/*.dmg
+
+      # The app's own snapshot mode opens the real window over a made-up workspace and saves a picture of each
+      # scene. Kept as an artifact; a commit whose message says [print-screens] also prints small copies in the log.
+      - name: Screens (snapshot mode)
+        continue-on-error: true
+        env:
+          PRINT_SCREENS: ${{ contains(github.event.head_commit.message, '[print-screens]') && '1' || '0' }}
+        run: |
+          set -uo pipefail
+          out="$RUNNER_TEMP/vision-screens"
+          build/Vision.app/Contents/MacOS/Vision --snapshot "$out" --snapshot-scenes chat,code,code-agent,prompt-history || true
+          cat "$out/snapshot.log" 2>/dev/null || echo "no snapshot log"
+          mkdir -p build/screens
+          cp "$out"/*.png build/screens/ 2>/dev/null || true
+          if [ "$PRINT_SCREENS" = "1" ]; then
+            for f in build/screens/*.png; do
+              [ -f "$f" ] || continue
+              sips -Z 1000 -s format jpeg -s formatOptions 35 "$f" --out "$f.small.jpg" >/dev/null
+              echo "SHOT $(basename "$f" .png)"
+              base64 -i "$f.small.jpg" | fold -w 160
+              echo "END SHOT"
+              rm -f "$f.small.jpg"
+            done
+          fi
+
+      - name: Keep the screens
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-macOS-screens
+          path: build/screens/*.png
+          if-no-files-found: ignore

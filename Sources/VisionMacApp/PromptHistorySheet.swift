@@ -63,7 +63,13 @@ struct PromptHistorySheet: View {
             footer(shown)
         }
         .frame(minWidth: 680, idealWidth: 780, minHeight: 480, idealHeight: 660)
-        .onAppear { chatID = model.promptHistoryChatID }
+        .onAppear {
+            chatID = model.promptHistoryChatID
+            if let focus = model.promptHistoryFocus {
+                expanded = focus
+                model.promptHistoryFocus = nil
+            }
+        }
         .task {
             // Records land as turns finish; re-read gently while open.
             while !Task.isCancelled {

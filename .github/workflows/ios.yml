@@ -58,7 +58,8 @@ jobs:
 
       - name: Run it in the simulator (demo data, every screen)
         env:
-          SMOKE_PRINT: "1"
+          # A commit whose message says [print-screens] also prints small copies of the screenshots in the log.
+          SMOKE_PRINT: ${{ contains(github.event.head_commit.message, '[print-screens]') && '1' || '0' }}
         run: bash iOS/simulator-smoke.sh
 
       - name: Keep the screenshots

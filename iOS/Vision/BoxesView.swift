@@ -210,7 +210,10 @@ private struct ModelRow: View {
     let choose: () -> Void
 
     var body: some View {
-        Button(action: choose) {
+        Button {
+            // The model being served is not something to switch to; it stays readable rather than greyed out.
+            if !isActive { choose() }
+        } label: {
             HStack(alignment: .top, spacing: 10) {
                 Image(systemName: isActive ? "checkmark.circle.fill" : "circle")
                     .foregroundStyle(isActive ? Color.green : Color.secondary)
@@ -235,7 +238,7 @@ private struct ModelRow: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .disabled(isActive || busy)
+        .disabled(busy)
     }
 
     private var detail: String {

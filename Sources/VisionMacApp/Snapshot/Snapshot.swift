@@ -18,7 +18,7 @@ import VisionHarnessCore
 // permission, and fall back to drawing the window's views (`cacheDisplay`).
 //
 //   --snapshot <folder>         where the PNGs go (or VISION_SNAPSHOT_DIR)
-//   --snapshot-scenes a,b       only these scenes (chat, code, setup, settings-models)
+//   --snapshot-scenes a,b       only these scenes (chat, code, code-agent, prompt-history, setup, settings-models)
 //   --snapshot-live <profile>   run the chat for real first, on Amazon Bedrock with this AWS profile, and save what
 //                               happened as chat-transcript.json (the seeded chat is made from such a run)
 //   --snapshot-region <region>  the live run's Region (default us-west-2)
@@ -29,6 +29,10 @@ enum Snapshot {
     enum Scene: String, CaseIterable, Sendable {
         case chat, code, setup
         case models = "settings-models"
+        /// Code mode with no file open: the editor pane is away and the agent has the room.
+        case codeAgent = "code-agent"
+        /// The prompt history, opened on the main chat, with one prompt unfolded.
+        case history = "prompt-history"
     }
 
     struct Live: Equatable, Sendable {
@@ -286,7 +290,73 @@ enum Snapshot {
             model.mode = .chat
             model.settingsTab = .models
             model.showSettings = true
+        case .codeAgent:
+            model.config.planPanelOpen = false
+            model.config.editorPane = .whenFileOpen
+            showMainChat(chatID, model)
+            model.mode = .code
+            setSidebarCollapsed(true, in: window)
+            for buffer in model.code.buffers { model.code.closeBuffer(buffer.id) }
+            model.code.terminalVisible = false
+        case .history:
+            model.mode = .chat
+            model.config.planPanelOpen = false
+            showMainChat(chatID, model)
+            model.promptHistoryFocus = seedPromptHistory(chatID, model)
+            model.openPromptHistory(chatID: chatID)
         }
+    }
+
+    /// A few prompts for the main chat's history (the seeded chat has none on record), one of them carrying a
+    /// picture and a file. Returns the one to unfold.
+    private static func seedPromptHistory(_ chatID: String, _ model: AppModel) -> String? {
+        let store = model.transport.promptHistory
+        if let existing = store.records(inChat: chatID).last(where: { $0.attachmentFiles?.isEmpty == false }) {
+            return existing.id
+        }
+        let title = model.transport.sessions.first { $0.id == chatID }?.title ?? "Chat"
+        let kept = model.transport.attachments
+        let picture = kept.reference(MessageAttachment(kind: .image, name: "report-before.png", data: samplePicture()))
+        let notes = kept.reference(MessageAttachment(kind: .file, name: "categories.csv",
+                                                     data: Data("category,total\nfood,412.50\nrent,1800.00\n".utf8)))
+        let now = Date()
+        let served = "qwen3.8-flash-next"
+        store.add(.init(chatID: chatID, chatTitle: title, mode: .code, text: SnapshotSeed.prompt,
+                        at: now.addingTimeInterval(-5_400), duration: 312, outcome: .completed(evidence: 2),
+                        changedFiles: ["report.py", "test_report.py"], model: served))
+        let focus = store.add(.init(chatID: chatID, chatTitle: title, mode: .code,
+                                    text: "The totals in this screenshot look off by a row. Compare them with the attached CSV and fix the report.",
+                                    at: now.addingTimeInterval(-2_700), duration: 148, outcome: .completed(evidence: 1),
+                                    changedFiles: ["report.py"], attachments: [picture.name, notes.name],
+                                    model: served, attachmentFiles: [picture, notes]))
+        store.add(.init(chatID: chatID, chatTitle: title, mode: .code, text: "Why does the by-category view sort by name and not by amount?",
+                        at: now.addingTimeInterval(-900), duration: 11, outcome: .completed(evidence: 0), model: served))
+        store.add(.init(chatID: chatID, chatTitle: title, mode: .code, text: "Run the whole test suite once more.",
+                        at: now.addingTimeInterval(-240), duration: 37, outcome: .stopped, model: served))
+        return focus.id
+    }
+
+    /// A small made-up picture: a table of rows on a card.
+    private static func samplePicture() -> Data {
+        let size = NSSize(width: 480, height: 300)
+        guard let rep = NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height),
+                                         bitsPerSample: 8, samplesPerPixel: 4, hasAlpha: true, isPlanar: false,
+                                         colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0),
+              let context = NSGraphicsContext(bitmapImageRep: rep) else { return Data() }
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = context
+        NSColor(calibratedRed: 0.11, green: 0.12, blue: 0.15, alpha: 1).setFill()
+        NSRect(origin: .zero, size: size).fill()
+        NSColor(calibratedWhite: 0.2, alpha: 1).setFill()
+        NSBezierPath(roundedRect: NSRect(x: 24, y: 24, width: 432, height: 252), xRadius: 12, yRadius: 12).fill()
+        for row in 0..<5 {
+            NSColor(calibratedWhite: row == 0 ? 0.75 : 0.45, alpha: 1).setFill()
+            NSBezierPath(roundedRect: NSRect(x: 48, y: 232 - row * 42, width: 220, height: 14), xRadius: 5, yRadius: 5).fill()
+            NSColor(calibratedRed: 0.3, green: 0.6, blue: 1, alpha: row == 0 ? 0 : 0.9).setFill()
+            NSBezierPath(roundedRect: NSRect(x: 340, y: 232 - row * 42, width: 92, height: 14), xRadius: 5, yRadius: 5).fill()
+        }
+        NSGraphicsContext.restoreGraphicsState()
+        return rep.representation(using: .png, properties: [:]) ?? Data()
     }
 
     /// Open the chat the pictures are about; the seeded one gets back what a stored chat doesn't keep.
@@ -301,9 +371,10 @@ enum Snapshot {
         switch scene {
         case .setup: model.showWizard = false
         case .models: model.showSettings = false
-        case .code:
+        case .code, .codeAgent:
             model.mode = .chat
             setSidebarCollapsed(false, in: window)
+        case .history: model.showPromptHistory = false
         case .chat: break
         }
     }
