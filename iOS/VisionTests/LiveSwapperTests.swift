@@ -157,7 +157,8 @@ final class LiveSwapperTests: XCTestCase {
             try await wait("the PDF reply") { !model.running.contains(chat) }
             entries = try XCTUnwrap(model.chat(chat)).entries
             XCTAssertTrue(entries.last?.text.contains("pdf text: yes") == true, entries.last?.text ?? "")
-            let sent = try XCTUnwrap(model.chat(chat)).transcript.last { $0.role == .user }
+            let transcript = try XCTUnwrap(model.chat(chat)).transcript
+            let sent = try XCTUnwrap(transcript.last { $0.role == .user })
             XCTAssertTrue(sent.content?.contains("The launch moves to the ninth of March.") == true)
 
             // The prompt history has all three, with what they carried still on disk.
