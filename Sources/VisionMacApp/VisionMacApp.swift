@@ -236,6 +236,12 @@ struct AppCommands: Commands {
 // MARK: - Root
 
 struct RootView: View {
+    /// Whether the plan panel can sit beside the work without squeezing it past what it can show: a chat needs
+    /// about 460 points, code mode's panes about 620.
+    nonisolated static func planFitsBeside(width: CGFloat, planWidth: Double, codeMode: Bool) -> Bool {
+        width - CGFloat(planWidth) >= (codeMode ? 620 : 460)
+    }
+
     @Environment(AppModel.self) private var model
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     /// The banner's "Sign in to AWS…" is running (the browser is open).
@@ -248,13 +254,29 @@ struct RootView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
         } detail: {
-            HStack(spacing: 0) {
-                detail
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            GeometryReader { proxy in
                 // The plan and the task queue share the right edge: the queue, while it is open, is in front.
-                if model.config.planPanelOpen, !model.showQueuePanel {
-                    PlanPanelColumn()
-                        .transition(.move(edge: .trailing))
+                let planOpen = model.config.planPanelOpen && !model.showQueuePanel
+                // Beside the work when there is room for both; over it when the window is too small — never
+                // squeezing the chat until its edges are cut off.
+                let beside = planOpen && Self.planFitsBeside(width: proxy.size.width,
+                                                             planWidth: model.config.planPanelWidth,
+                                                             codeMode: model.mode == .code)
+                HStack(spacing: 0) {
+                    detail
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if beside {
+                        PlanPanelColumn()
+                            .transition(.move(edge: .trailing))
+                    }
+                }
+                .overlay(alignment: .trailing) {
+                    if planOpen, !beside {
+                        PlanPanelColumn()
+                            .frame(maxWidth: max(240, proxy.size.width - 60), alignment: .trailing)
+                            .shadow(color: .black.opacity(0.35), radius: 14, x: -4)
+                            .transition(.move(edge: .trailing))
+                    }
                 }
             }
             .toolbar { toolbar }

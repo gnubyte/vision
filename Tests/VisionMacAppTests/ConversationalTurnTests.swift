@@ -171,3 +171,22 @@ final class ConversationalTurnTests: XCTestCase {
         XCTAssertEqual(CodeModeView.toggledEditorMode(from: .whenFileOpen, openFiles: 0), .always)
     }
 }
+
+/// Small windows: panes step aside or shorten instead of being cut off at the window's edges.
+final class SmallWindowLayoutTests: XCTestCase {
+    func testTheFileTreeStepsAsideBeforeThePanesOverflow() {
+        // The smallest window (900 wide) with the 200-point sidebar leaves about 700 for code mode.
+        XCTAssertTrue(CodeModeView.treeFits(width: 700, centerVisible: true), "tree + editor + agent fit at the minimum")
+        XCTAssertFalse(CodeModeView.treeFits(width: 640, centerVisible: true))
+        XCTAssertTrue(CodeModeView.treeFits(width: 640, centerVisible: false), "with no editor the tree stays")
+        XCTAssertFalse(CodeModeView.treeFits(width: 400, centerVisible: false))
+        XCTAssertLessThanOrEqual(CodePaneWidths.tree + CodePaneWidths.center + CodePaneWidths.chat, 700)
+    }
+
+    func testThePlanSitsBesideTheWorkOnlyWhenBothFit() {
+        XCTAssertTrue(RootView.planFitsBeside(width: 1_200, planWidth: 320, codeMode: false))
+        XCTAssertTrue(RootView.planFitsBeside(width: 1_200, planWidth: 320, codeMode: true))
+        XCTAssertFalse(RootView.planFitsBeside(width: 700, planWidth: 320, codeMode: false), "it goes over the chat instead")
+        XCTAssertFalse(RootView.planFitsBeside(width: 900, planWidth: 320, codeMode: true))
+    }
+}

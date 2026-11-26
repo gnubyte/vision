@@ -356,7 +356,7 @@ struct ChatView: View {
                     }
                     .fixedSize()
                 }
-                .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 110, maxWidth: .infinity, alignment: .leading)
                 // Narrow (code mode's chat pane): the last turn's usage gives way, and the gauge stays on one line.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 10) {
@@ -369,6 +369,9 @@ struct ChatView: View {
                     }
                     .fixedSize()
                     ContextGaugeView(session: session, draft: draft)
+                        .fixedSize()
+                    // Narrower still: the numbers alone, short ("15K / 1M").
+                    ContextGaugeView(session: session, draft: draft, compact: true)
                         .fixedSize()
                 }
                 .layoutPriority(1)
@@ -1411,6 +1414,18 @@ private struct ContextGaugeView: View {
     @Environment(AppModel.self) private var model
     let session: SessionVM
     let draft: String
+    /// The short form for a narrow pane: no bar, and "15K / 1M" for the numbers.
+    var compact = false
+
+    /// "15K", "1M", "262K" — a token count in a few characters.
+    nonisolated static func short(_ tokens: Int) -> String {
+        if tokens >= 1_000_000 {
+            let millions = Double(tokens) / 1_000_000
+            return millions >= 10 || millions == millions.rounded() ? "\(Int(millions.rounded()))M" : String(format: "%.1fM", millions)
+        }
+        if tokens >= 1_000 { return "\(Int((Double(tokens) / 1_000).rounded()))K" }
+        return "\(tokens)"
+    }
 
     var body: some View {
         let limit = model.transport.contextLimit()
@@ -1420,17 +1435,23 @@ private struct ContextGaugeView: View {
             Image(systemName: "gauge.with.dots.needle.50percent")
                 .font(.system(size: 11))
                 .foregroundStyle(tint(fraction))
-            Gauge(value: min(fraction, 1.0), in: 0...1) {
-                EmptyView()
-            } currentValueLabel: {
-                EmptyView()
+            if compact {
+                Text("\(Self.short(used)) / \(Self.short(limit))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            } else {
+                Gauge(value: min(fraction, 1.0), in: 0...1) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .gaugeStyle(.accessoryLinearCapacity)
+                .tint(tint(fraction))
+                .frame(width: 64)
+                Text("\(used.formatted()) / \(limit.formatted()) ctx")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
-            .gaugeStyle(.accessoryLinearCapacity)
-            .tint(tint(fraction))
-            .frame(width: 64)
-            Text("\(used.formatted()) / \(limit.formatted()) ctx")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
         }
         .help("Context window in use for \(model.transport.activeModelID ?? "this model"): \(used.formatted()) of \(limit.formatted()) tokens — window \(model.transport.contextSource()). Type /compact to free space.")
     }

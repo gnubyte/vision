@@ -88,7 +88,8 @@ if [ $status -ne 0 ]; then
   tail -n 60 "$LIVE/test.log" >&2
   exit 1
 fi
-if grep -Eq "skipped|Executed 0 tests" "$LIVE/test.log" || ! grep -q "LIVE: switch to" "$LIVE/test.log"; then
+if grep -Eq "Test Case .* skipped|with [1-9][0-9]* tests? skipped|Executed 0 tests" "$LIVE/test.log" \
+   || ! grep -q "LIVE: switch to" "$LIVE/test.log" || ! grep -q "LIVE: signed in to" "$LIVE/test.log"; then
   echo "the live tests did not run against the servers (skipped)" >&2
   exit 1
 fi

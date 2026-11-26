@@ -46,6 +46,8 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            // Rows scrolled past the top stay out from under the buttons above the list.
+            .clipped()
         }
         .safeAreaInset(edge: .bottom) { footer }
         .confirmationDialog("Delete “\(deleting?.title ?? "this chat")”?",

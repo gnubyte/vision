@@ -2,6 +2,13 @@ import SwiftUI
 import AppKit
 import VisionHarnessCore
 
+/// The least each of code mode's panes can show itself in. Together they fit the smallest window.
+enum CodePaneWidths {
+    static let tree: CGFloat = 150
+    static let center: CGFloat = 240
+    static let chat: CGFloat = 290
+}
+
 /// Code mode: the project navigator and the agent, with a tabbed editor and an
 /// integrated terminal between them when they are wanted. The editor is optional:
 /// by default it is there while a file is open and gone when none is, so the
@@ -37,13 +44,25 @@ struct CodeModeView: View {
     /// The editor or the terminal sits between the tree and the agent.
     private var centerVisible: Bool { editorVisible || code.terminalVisible }
 
+    /// Whether the file tree has room: in a window too small for every pane it steps aside first (the agent
+    /// and the file being edited are what the window is for), rather than every pane being cut off at the edges.
+    nonisolated static func treeFits(width: CGFloat, centerVisible: Bool) -> Bool {
+        width >= CodePaneWidths.tree + CodePaneWidths.chat + (centerVisible ? CodePaneWidths.center : 0)
+    }
+
     var body: some View {
+        GeometryReader { proxy in
+            panes(showTree: code.showTree && Self.treeFits(width: proxy.size.width, centerVisible: centerVisible))
+        }
+    }
+
+    private func panes(showTree: Bool) -> some View {
         // Split views size children to their ideal height unless told to
         // fill, which otherwise leaves the panes floating in a band.
         HSplitView {
-            if code.showTree {
+            if showTree {
                 FileTreeView()
-                    .frame(minWidth: 180, idealWidth: 250, maxWidth: 460,
+                    .frame(minWidth: CodePaneWidths.tree, idealWidth: 230, maxWidth: 460,
                            maxHeight: .infinity)
             }
 
@@ -58,7 +77,7 @@ struct CodeModeView: View {
                             .frame(minHeight: 100, idealHeight: editorVisible ? 240 : nil, maxHeight: .infinity)
                     }
                 }
-                .frame(minWidth: 320, maxWidth: .infinity, maxHeight: .infinity)
+                .frame(minWidth: CodePaneWidths.center, maxWidth: .infinity, maxHeight: .infinity)
             }
 
             // With nothing in the middle the agent takes the whole width (and can't be hidden: something
@@ -67,7 +86,7 @@ struct CodeModeView: View {
                 // (A wide ideal when it is alone with the tree, so the split gives the spare room to the agent
                 // rather than stretching the tree to its maximum.)
                 chatPane
-                    .frame(minWidth: 320, idealWidth: centerVisible ? 400 : 1_100,
+                    .frame(minWidth: CodePaneWidths.chat, idealWidth: centerVisible ? 400 : 1_100,
                            maxWidth: centerVisible ? 640 : .infinity,
                            maxHeight: .infinity)
                     .layoutPriority(centerVisible ? 0 : 1)
