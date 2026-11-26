@@ -8,9 +8,10 @@ import VisionHarnessCore
 struct BoxesView: View {
     @Environment(MobileModel.self) private var model
     @State private var adding = false
+    @State private var path: [String] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $path) {
             Group {
                 if model.connections.isEmpty {
                     ContentUnavailableView {
@@ -46,6 +47,10 @@ struct BoxesView: View {
                 }
             }
             .sheet(isPresented: $adding) { AddBoxSheet() }
+            .onAppear {
+                // A demo run can open straight on a box.
+                if model.demoScreen == "box", path.isEmpty, let first = model.connections.first { path = [first.id] }
+            }
         }
     }
 }

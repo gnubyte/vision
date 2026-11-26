@@ -37,6 +37,11 @@ struct RootView: View {
         .task {
             // With no box yet, the first thing to do is add one.
             if model.connections.isEmpty { tab = .boxes }
+            switch model.demoScreen {
+            case "boxes", "box": tab = .boxes
+            case "settings": tab = .settings
+            default: break
+            }
             await model.refreshAll()
         }
         .onChange(of: scenePhase) { _, phase in

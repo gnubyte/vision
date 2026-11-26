@@ -63,19 +63,25 @@ final class MobileModel {
 
     // Settings.
     var maxImages: Int = ImageBudget.defaultMaxImages {
-        didSet { defaults.set(maxImages, forKey: Keys.maxImages) }
+        didSet { if !isDemo { defaults.set(maxImages, forKey: Keys.maxImages) } }
     }
     var systemPrompt: String = MobileModel.defaultSystemPrompt {
-        didSet { defaults.set(systemPrompt, forKey: Keys.systemPrompt) }
+        didSet { if !isDemo { defaults.set(systemPrompt, forKey: Keys.systemPrompt) } }
     }
     /// What servers said they take, by route id.
     var learnedImageLimits: [String: Int] = [:] {
-        didSet { defaults.set(learnedImageLimits, forKey: Keys.learnedLimits) }
+        didSet { if !isDemo { defaults.set(learnedImageLimits, forKey: Keys.learnedLimits) } }
     }
 
-    @ObservationIgnored let secrets = KeychainSecretStore()
-    @ObservationIgnored let history = PromptHistoryStore.standard()
-    @ObservationIgnored let attachments = AttachmentStore.standard()
+    /// A demo run (`-VisionDemo YES` on the command line): a made-up box and chat, nothing read from or written
+    /// to the phone, no network. For screenshots and for checking the app in the simulator.
+    @ObservationIgnored let isDemo: Bool
+    /// The screen a demo run opens on (`-VisionDemoScreen chats|chat|boxes|box|history|settings`).
+    @ObservationIgnored let demoScreen: String?
+
+    @ObservationIgnored let secrets: any SecretStore
+    @ObservationIgnored let history: PromptHistoryStore
+    @ObservationIgnored let attachments: AttachmentStore
     @ObservationIgnored private let defaults = UserDefaults.standard
     @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
     @ObservationIgnored private var polls: [String: Task<Void, Never>] = [:]
@@ -95,6 +101,19 @@ final class MobileModel {
     private var chatsFolder: URL { AppPaths.support.appendingPathComponent("mobile-chats", isDirectory: true) }
 
     init() {
+        isDemo = UserDefaults.standard.bool(forKey: "VisionDemo")
+        demoScreen = isDemo ? UserDefaults.standard.string(forKey: "VisionDemoScreen") : nil
+        if isDemo {
+            secrets = MemorySecretStore()
+            history = PromptHistoryStore(fileURL: nil)
+            attachments = AttachmentStore(root: FileManager.default.temporaryDirectory
+                .appendingPathComponent("vision-demo-attachments", isDirectory: true))
+            seedDemo()
+            return
+        }
+        secrets = KeychainSecretStore()
+        history = PromptHistoryStore.standard()
+        attachments = AttachmentStore.standard()
         maxImages = defaults.object(forKey: Keys.maxImages) as? Int ?? ImageBudget.defaultMaxImages
         systemPrompt = defaults.string(forKey: Keys.systemPrompt) ?? Self.defaultSystemPrompt
         learnedImageLimits = defaults.dictionary(forKey: Keys.learnedLimits) as? [String: Int] ?? [:]
@@ -126,7 +145,7 @@ final class MobileModel {
         if let apiKey, !apiKey.isEmpty {
             secrets.write(apiKey, service: AppIdentity.KeychainService.provider, account: kept.id)
         }
-        SwapperConnectionStore.save(connections, defaults: defaults)
+        if !isDemo { SwapperConnectionStore.save(connections, defaults: defaults) }
     }
 
     /// Add a box from the connection code on its Connect tab. The code carries the box's certificate, so the
@@ -158,6 +177,7 @@ final class MobileModel {
     }
 
     func removeBox(_ id: String) {
+        if isDemo { connections.removeAll { $0.id == id }; return }
         guard let connection = connections.first(where: { $0.id == id }) else { return }
         polls[id]?.cancel()
         polls[id] = nil
@@ -170,6 +190,7 @@ final class MobileModel {
     }
 
     func refresh(_ id: String) async {
+        if isDemo { return }
         guard let connection = connections.first(where: { $0.id == id }), let client = self.client(for: connection) else { return }
         do {
             let status = try await client.status()
@@ -187,6 +208,7 @@ final class MobileModel {
 
     /// Stop what the box serves and load `key`. The box takes minutes; its status is polled until it is done.
     func swap(_ id: String, to key: String) async {
+        if isDemo { demoSwap(id, to: key); return }
         guard let connection = connections.first(where: { $0.id == id }), let client = self.client(for: connection) else { return }
         do {
             try await client.swap(to: key)
@@ -201,7 +223,7 @@ final class MobileModel {
 
     /// Follow a box while it is switching.
     func watch(_ id: String) {
-        guard polls[id] == nil else { return }
+        guard !isDemo, polls[id] == nil else { return }
         polls[id] = Task { [weak self] in
             var quiet = 0
             while !Task.isCancelled {
@@ -247,6 +269,7 @@ final class MobileModel {
     }
 
     private func save(_ chat: MobileChat) {
+        if isDemo { return }
         let url = chatsFolder.appendingPathComponent("\(chat.id).json")
         guard let data = try? JSONEncoder().encode(chat) else { return }
         try? FileManager.default.createDirectory(at: chatsFolder, withIntermediateDirectories: true)
@@ -356,6 +379,10 @@ final class MobileModel {
             outcome = .failed(reason: message)
         }
 
+        if isDemo {
+            outcome = await demoReply(in: chatID)
+            return
+        }
         guard let connection = self.connection(self.chat(chatID)?.boxID) else {
             return fail("Add a Spark Swapper box first (the Boxes tab), then send this again.")
         }
@@ -446,5 +473,164 @@ final class MobileModel {
     static func describe(_ error: Error) -> String {
         if let known = error as? LocalizedError, let text = known.errorDescription, !text.isEmpty { return text }
         return error.localizedDescription
+    }
+}
+
+// MARK: - The demo run
+//
+// `-VisionDemo YES` opens the app on a made-up box and chat: nothing is read from or written to the phone and
+// nothing goes over the network. It is how the screenshots are made and how the app is checked in the
+// simulator; `-VisionDemoScreen <name>` chooses the screen it opens on.
+
+extension MobileModel {
+    private static let demoBoxID = "demo-box"
+
+    private func seedDemo() {
+        let box = SwapperConnection(id: Self.demoBoxID, name: "DGX Spark (spark-3f2a)",
+                                    url: "https://spark-3f2a.local:8999", platform: "nvidia-gb10",
+                                    hostname: "spark-3f2a", version: "2.2.0", auth: .token,
+                                    apiBase: "https://spark-3f2a.local:11443/v1")
+        connections = [box]
+        statuses[box.id] = Self.demoStatus(active: "tfflash")
+
+        let shot = attachments.reference(MessageAttachment(kind: .image, name: "checkout-screen.png", data: Self.demoPicture()))
+        let spec = attachments.reference(MessageAttachment(kind: .file, name: "payments-spec.pdf",
+                                                           data: Data("Payments spec (demo)".utf8)))
+        let now = Date()
+        var chat = MobileChat()
+        chat.id = "demo-chat"
+        chat.title = "Checkout screen review"
+        chat.boxID = box.id
+        chat.createdAt = now.addingTimeInterval(-1_900)
+        chat.updatedAt = now.addingTimeInterval(-60)
+        chat.entries = [
+            ChatEntry(role: .user, text: "What stands out in this checkout screen, and what should I fix first?",
+                      at: now.addingTimeInterval(-1_900), attachments: [shot]),
+            ChatEntry(role: .assistant, text: """
+                Three things stand out, most important first:
+
+                1. **The total is below the fold.** On a small phone the Pay button shows before the amount does.
+                2. **Two primary buttons.** "Pay" and "Apply code" share the same weight.
+                3. The error text is red on a red-tinted field, which is hard to read.
+
+                A quick fix for the first one:
+
+                ```swift
+                ScrollView { summary }
+                    .safeAreaInset(edge: .bottom) { payBar(total: total) }
+                ```
+                """, at: now.addingTimeInterval(-1_860)),
+            ChatEntry(role: .user, text: "Summarise the attached spec and list the open questions.",
+                      at: now.addingTimeInterval(-300), attachments: [spec]),
+            ChatEntry(role: .assistant, text: """
+                The spec covers card and wallet payments, refunds within 30 days and a retry queue for failed captures.
+
+                Open questions:
+                - Who owns partial refunds after a currency change?
+                - Is the retry queue per merchant or global?
+                """, at: now.addingTimeInterval(-240)),
+        ]
+        var older = MobileChat()
+        older.id = "demo-chat-2"
+        older.title = "Tailscale exit node on the Spark"
+        older.boxID = box.id
+        older.updatedAt = now.addingTimeInterval(-86_400)
+        older.entries = [
+            ChatEntry(role: .user, text: "How do I make the Spark an exit node?", at: now.addingTimeInterval(-86_500)),
+            ChatEntry(role: .assistant, text: "Run `sudo tailscale up --advertise-exit-node`, then approve it in the admin console.",
+                      at: now.addingTimeInterval(-86_400)),
+        ]
+        chats = [chat, older]
+
+        let model = "qwen3.8-flash-next"
+        history.add(.init(chatID: older.id, chatTitle: older.title, mode: .chat, text: older.entries[0].text,
+                          at: now.addingTimeInterval(-86_500), duration: 9, outcome: .completed(evidence: 0), model: model))
+        history.add(.init(chatID: chat.id, chatTitle: chat.title, mode: .chat, text: chat.entries[0].text,
+                          at: now.addingTimeInterval(-1_900), duration: 38, outcome: .completed(evidence: 0),
+                          attachments: [shot.name], model: model, attachmentFiles: [shot]))
+        history.add(.init(chatID: chat.id, chatTitle: chat.title, mode: .chat, text: "Show me the same fix for iPad.",
+                          at: now.addingTimeInterval(-1_200), duration: 4, outcome: .stopped, model: model))
+        history.add(.init(chatID: chat.id, chatTitle: chat.title, mode: .chat, text: chat.entries[2].text,
+                          at: now.addingTimeInterval(-300), duration: 61, outcome: .completed(evidence: 0),
+                          attachments: [spec.name], model: model, attachmentFiles: [spec]))
+    }
+
+    /// What the made-up box reports: serving `active`, or loading `loading`.
+    static func demoStatus(active: String, loading: String? = nil) -> SwapperStatus {
+        typealias Model = SwapperStatus.Model
+        let serving = loading == nil ? active : ""
+        let models = [
+            Model(key: "tfflash", title: "Qwen3.8 Flash Next", tagline: "Fast, reads pictures, 256K context.",
+                  engine: "TensorFold", context: 262_144, served_id: "qwen3.8-flash-next", vision: true,
+                  running: serving == "tfflash", healthy: serving == "tfflash", order: 1, installed: true,
+                  perf: .init(decode: 58)),
+            Model(key: "inkling", title: "Inkling 2 Mini", tagline: "Reads pictures; takes eight per request.",
+                  engine: "vLLM", context: 262_144, served_id: "inkling-2-mini", vision: true,
+                  running: serving == "inkling", healthy: serving == "inkling", order: 2, installed: true,
+                  perf: .init(decode: 41)),
+            Model(key: "tf27b", title: "Qwen3.8 27B", tagline: "The larger Qwen, for careful work.",
+                  engine: "TensorFold", context: 131_072, served_id: "qwen3.8-27b", vision: true,
+                  running: serving == "tf27b", healthy: serving == "tf27b", order: 3, installed: true,
+                  perf: .init(decode: 27)),
+            Model(key: "ornith", title: "Ornith 1.5 122B", engine: "ExLlamaV3", context: 262_144,
+                  served_id: "ornith-1.5", vision: false, order: 4, installed: false,
+                  install: .init(size_gb: 65, time: "30–50 minutes")),
+        ]
+        var status = SwapperStatus(active: loading == nil ? active : nil, loading: loading, busy: loading != nil,
+                                   models: Dictionary(uniqueKeysWithValues: models.map { ($0.key, $0) }),
+                                   version: "2.2.0", platform: "nvidia-gb10", hostname: "spark-3f2a")
+        status.memory = Lenient(SwapperStatus.Memory(total: 128, available: 71))
+        if let loading {
+            let title = status.models[loading]?.title ?? loading
+            status.job = SwapperStatus.Job(id: "demo", target: loading, state: "running",
+                                           started: Date().timeIntervalSince1970, steps: [
+                .init(key: "stop", label: "Stop the serving model", state: "done"),
+                .init(key: "start", label: "Start \(title)", state: "running"),
+                .init(key: "health", label: "Wait until it answers", state: "pending"),
+            ])
+        }
+        return status
+    }
+
+    private func demoSwap(_ id: String, to key: String) {
+        statuses[id] = Self.demoStatus(active: key, loading: key)
+        switching.insert(id)
+        Task { [weak self] in
+            try? await Task.sleep(nanoseconds: 5_000_000_000)
+            self?.statuses[id] = Self.demoStatus(active: key)
+            self?.switching.remove(id)
+        }
+    }
+
+    private func demoReply(in chatID: String) async -> PromptHistoryRecord.Outcome {
+        let reply = "This is a demo run, so nothing was sent to a model. On a real box the reply streams in here — **Markdown**, lists and code blocks included."
+        var shown = ""
+        for word in reply.split(separator: " ") {
+            if Task.isCancelled { break }
+            try? await Task.sleep(nanoseconds: 45_000_000)
+            shown += (shown.isEmpty ? "" : " ") + word
+            streaming[chatID] = shown
+        }
+        append(ChatEntry(role: .assistant, text: shown), to: chatID)
+        return Task.isCancelled ? .stopped : .completed(evidence: 0)
+    }
+
+    /// A small picture for the demo chat's attachment: a card on a tinted background.
+    private static func demoPicture() -> Data {
+        let size = CGSize(width: 360, height: 640)
+        let image = UIGraphicsImageRenderer(size: size).image { context in
+            UIColor(red: 0.93, green: 0.95, blue: 0.99, alpha: 1).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIColor.white.setFill()
+            UIBezierPath(roundedRect: CGRect(x: 24, y: 80, width: 312, height: 300), cornerRadius: 18).fill()
+            UIColor(red: 0.23, green: 0.51, blue: 0.96, alpha: 1).setFill()
+            UIBezierPath(roundedRect: CGRect(x: 24, y: 420, width: 312, height: 52), cornerRadius: 14).fill()
+            UIColor(white: 0.85, alpha: 1).setFill()
+            for row in 0..<4 {
+                UIBezierPath(roundedRect: CGRect(x: 48, y: 112 + row * 58, width: row == 3 ? 150 : 264, height: 18),
+                             cornerRadius: 6).fill()
+            }
+        }
+        return image.pngData() ?? Data()
     }
 }

@@ -847,6 +847,9 @@ VisionHarnessCore/         the harness. No AppKit, no SwiftUI — headlessly tes
   APIServer.swift          the loopback OpenAI-shaped endpoint over the default model
   TaskQueue.swift          the durable work list (attachments + long prompts ride along)
   Compaction.swift         the summarizer, with a Key facts section the harness remembers
+  VisionBudget.swift       pictures per request: roll-off, limits learned from the server, the attachment store
+  AttachmentDigest.swift   attachments as a model server reads them: text inline, PDF text, scanned pages as pictures
+  PromptHistory.swift      the durable prompt ledger, its sort orders and Markdown / CSV / JSON export
   PTY.swift                forkpty + a shell
   TerminalEmulator.swift   VT100/xterm-subset screen
   EditorBuffer.swift       open file, dirty tracking, external-change resolution

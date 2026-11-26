@@ -12,6 +12,7 @@ struct ChatListView: View {
     let openBoxes: () -> Void
     @State private var path: [String] = []
     @State private var showHistory = false
+    @State private var demoRouted = false
 
     var body: some View {
         NavigationStack(path: $path) {
@@ -61,6 +62,13 @@ struct ChatListView: View {
             }
             .sheet(isPresented: $showHistory) {
                 PromptHistoryView(chatID: nil)
+            }
+            .onAppear {
+                // A demo run can open straight on a chat or on the history.
+                guard !demoRouted else { return }
+                demoRouted = true
+                if model.demoScreen == "chat", let first = model.chats.first { path = [first.id] }
+                if model.demoScreen == "history" { showHistory = true }
             }
         }
     }

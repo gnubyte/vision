@@ -55,3 +55,16 @@ jobs:
           name: Vision-iOS-ipa
           path: iOS/build/Vision.ipa
           if-no-files-found: error
+
+      - name: Run it in the simulator (demo data, every screen)
+        env:
+          SMOKE_PRINT: "1"
+        run: bash iOS/simulator-smoke.sh
+
+      - name: Keep the screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-iOS-screens
+          path: iOS/build/screens/*.png
+          if-no-files-found: ignore
