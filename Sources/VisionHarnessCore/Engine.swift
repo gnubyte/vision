@@ -161,6 +161,16 @@ public struct EngineConfig: Sendable {
     public var depth: Int = 0
     /// Unattended work (a queue task, `/goal`): handed to the tools as `ToolContext.unattended`.
     public var unattended = false
+    /// How many pictures one request may carry, and how much of the window they may take. Older pictures roll
+    /// off (see `ImageRollOff`); a server that names a lower limit corrects this for the rest of the run.
+    public var imageBudget: ImageBudget = .standard
+    /// The server reads attached files itself (OpenAI's own API, Amazon Bedrock): they are sent as files.
+    /// Everywhere else — every local server — a file is turned into text or page pictures first.
+    public var nativeFileAttachments = false
+    /// Where rolled-off pictures are kept so the model can be pointed back at them. Nil: they are only named.
+    public var attachmentStore: AttachmentStore?
+    /// The server said how many pictures it really takes: the host remembers it for the route.
+    public var onImageLimit: (@Sendable (Int) -> Void)?
 
     public init(maxIterations: Int = 30, toolTimeout: TimeInterval = 300,
                 model: String, temperature: Double? = nil, maxOutputTokens: Int? = nil,
@@ -294,8 +304,15 @@ public struct Engine: Sendable {
         var messages = input
         progress?.begin(baseCount: input.count)
         if !userText.isEmpty || !userAttachments.isEmpty {
-            messages.append(.user(userText,
-                                  attachments: userAttachments.isEmpty ? nil : userAttachments))
+            // Files become text and scanned pages become pictures here, once: a model server reads nothing else.
+            // (A server that reads files itself — OpenAI, Bedrock — gets them as they are.)
+            let digest = config.nativeFileAttachments
+                ? AttachmentDigest.Result(text: userText, attachments: userAttachments.map {
+                    $0.kind == .image ? AttachmentDigest.downscaled($0, longEdge: 1_568) : $0 })
+                : AttachmentDigest.prepare(text: userText, attachments: userAttachments,
+                                           options: .init(vision: config.visionEnabled))
+            messages.append(.user(digest.text,
+                                  attachments: digest.attachments.isEmpty ? nil : digest.attachments))
         }
         // Background agents that finished since the last turn report in.
         // (Taken first, then noted: `progress?.noteReports(take…())` would not take them at all without a tracker.)
@@ -326,6 +343,9 @@ public struct Engine: Sendable {
         // swapped models continues on whatever it serves now.
         var client = self.client
         var model = config.model
+        // The picture budget for this run; lowered when the server names a smaller limit than the route's.
+        var imageBudget = config.imageBudget
+        var imageLimitCorrections = 0
 
         // What a tool may touch while it runs — with the route as it stands now (a retry may have moved it).
         func makeContext() -> ToolContext {
@@ -384,6 +404,11 @@ public struct Engine: Sendable {
                 if Task.isCancelled { throw CancellationError() }
 
                 Self.pruneToolImages(&messages, keep: config.maxToolImageMessages)
+                // Keep the request inside the model's picture limit: the newest pictures travel, older ones
+                // roll off to disk with a note saying where they are.
+                if ImageRollOff.fit(&messages, budget: imageBudget, store: config.attachmentStore).rolledOff > 0 {
+                    progress?.update(messages, progressed: false)
+                }
                 estimatedAtCall = TokenEstimate.request(systemPrompt: systemPrompt, messages: messages)
 
                 let request = LLMRequest(
@@ -441,6 +466,16 @@ public struct Engine: Sendable {
                             progress?.update(messages)
                             continue modelCall
                         }
+                    }
+                    // The server takes fewer pictures than were sent: learn its limit, roll the oldest
+                    // off and ask again, instead of failing the turn (and every turn after it).
+                    let sentImages = ImageRollOff.imageCount(messages)
+                    if imageLimitCorrections < 4,
+                       let limit = ImageLimit.learned(from: error, sent: sentImages), limit < sentImages {
+                        imageLimitCorrections += 1
+                        imageBudget.maxImages = limit
+                        config.onImageLimit?(limit)
+                        continue modelCall
                     }
                     // Timeouts, a server that is down/restarting/swapping/busy:
                     // wait and try again until it answers or the user stops.

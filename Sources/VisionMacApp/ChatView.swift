@@ -109,6 +109,12 @@ struct ChatView: View {
             composerHeight = min(max(ComposerField.minHeight, 90), ComposerField.maxHeight)
             model.pendingComposerText = nil
         }
+        .onChange(of: model.pendingComposerAttachments) { _, items in
+            // "Attach again" from the prompt history: the files and screenshots an earlier prompt carried.
+            guard !items.isEmpty else { return }
+            for item in items where !attachments.contains(item) { attachments.append(item) }
+            model.pendingComposerAttachments = []
+        }
     }
 
     /// Persist the draft a couple of seconds after typing stops. Sent prompts
@@ -143,7 +149,7 @@ struct ChatView: View {
                     // The live turn-phase card sits under the newest entry
                     // while a turn runs; the finished one stays until the
                     // next turn replaces it.
-                    if let phase = session.turnPhase {
+                    if let phase = session.visibleTurnPhase {
                         PhaseCard(state: phase, live: session.running)
                             .padding(.leading, Theme.gutter)
                             .id("phase-\(phase.turnID)")
@@ -284,7 +290,7 @@ struct ChatView: View {
                 }
                 .menuStyle(.borderlessButton)
                 .frame(width: 28)
-                .help("Attach an image or file")
+                .help("Attach an image, a file or a PDF; add a folder to this chat")
                 .accessibilityLabel("Attach an image or file")
                 .disabled(session.running)
 
@@ -345,34 +351,12 @@ struct ChatView: View {
                             .foregroundStyle(.secondary)
                             .help("Clear the unsent prompt (it is saved automatically every few seconds)")
                         }
-                        if let name = session.projectName, !session.isAgent {
-                            Label(name, systemImage: "folder")
-                                .foregroundStyle(.secondary)
-                        }
-                        Button {
-                            model.addFolder(to: session)
-                        } label: {
-                            Label("Add Folder", systemImage: "folder.badge.plus")
-                                .labelStyle(.iconOnly)
-                        }
-                        .buttonStyle(.plain)
-                        .foregroundStyle(.secondary)
-                        .help("Add another folder to this chat, so the agent can work across both")
-                        if model.guardian.isSignedIn {
-                            Button {
-                                model.sendingToGuardian = session
-                            } label: {
-                                Label("Send to Guardian", systemImage: "paperplane")
-                                    .labelStyle(.iconOnly)
-                            }
-                            .buttonStyle(.plain)
-                            .foregroundStyle(.secondary)
-                            .help("Send this chat and any files to a person, an AI Coders project or a board in Guardian")
-                        }
+                        // (Adding a folder and sending to Guardian are in the + menu; the project is in the
+                        // window's toolbar. They are not repeated here: this row is the model and how it runs.)
                     }
                     .fixedSize()
                 }
-                .frame(minWidth: 140, maxWidth: .infinity, alignment: .leading)
+                .frame(minWidth: 110, maxWidth: .infinity, alignment: .leading)
                 // Narrow (code mode's chat pane): the last turn's usage gives way, and the gauge stays on one line.
                 ViewThatFits(in: .horizontal) {
                     HStack(spacing: 10) {
@@ -385,6 +369,9 @@ struct ChatView: View {
                     }
                     .fixedSize()
                     ContextGaugeView(session: session, draft: draft)
+                        .fixedSize()
+                    // Narrower still: the numbers alone, short ("15K / 1M").
+                    ContextGaugeView(session: session, draft: draft, compact: true)
                         .fixedSize()
                 }
                 .layoutPriority(1)
@@ -1342,127 +1329,28 @@ struct PhaseCard: View {
     }
 }
 
-/// A chat's prompts so far, with their outcomes and a way to reuse one: the
-/// prompt timeline. Click a row to expand it; copy it, drop it back into the
-/// composer to talk about it, and jump to the results card it produced.
+/// One quiet line under a finished turn: how many prompts this chat has taken, and the way into their history
+/// (sorted by time, copyable, with the files and screenshots each one carried). The list itself lives in the
+/// Prompt History window — a long chat's prompts don't belong at the bottom of its transcript.
 struct PromptHistoryView: View {
     @Environment(AppModel.self) private var model
     let session: SessionVM
-    @State private var expandedID: String?
-    @State private var jumpTarget: String?
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 6) {
+        Button {
+            model.openPromptHistory(chatID: session.id)
+        } label: {
+            HStack(spacing: 5) {
                 Image(systemName: "clock.arrow.circlepath")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Text("Prompt history — \(session.promptHistory.count) prompt\(session.promptHistory.count == 1 ? "" : "s") in this chat")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(.secondary)
-                Spacer()
+                Text("\(session.promptHistory.count) prompts in this chat")
+                Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
             }
-            ForEach(session.promptHistory) { record in
-                row(record)
-            }
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
+            .contentShape(Rectangle())
         }
-    }
-
-    @ViewBuilder
-    private func row(_ record: SessionVM.PromptRecord) -> some View {
-        let isExpanded = expandedID == record.id
-        VStack(alignment: .leading, spacing: 0) {
-            Button {
-                withAnimation(.easeOut(duration: 0.12)) { expandedID = isExpanded ? nil : record.id }
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "person.crop.circle")
-                        .font(.system(size: 11))
-                        .foregroundStyle(Theme.userTint)
-                    Text(record.text)
-                        .font(.system(size: 11.5))
-                        .lineLimit(isExpanded ? nil : 1)
-                        .multilineTextAlignment(.leading)
-                    Spacer(minLength: 4)
-                    outcomeChip(record)
-                    if let duration = record.duration {
-                        Text(duration.formattedDuration)
-                            .font(Theme.mono(9.5))
-                            .foregroundStyle(.tertiary)
-                            .monospacedDigit()
-                    }
-                    Text(record.at, style: .time)
-                        .font(Theme.mono(9.5))
-                        .foregroundStyle(.tertiary)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 8, weight: .semibold))
-                        .foregroundStyle(.tertiary)
-                        .rotationEffect(.degrees(isExpanded ? 90 : 0))
-                }
-                .padding(6)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-
-            if isExpanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(record.text)
-                        .font(.system(size: 11))
-                        .textSelection(.enabled)
-                        .padding(8)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Theme.surface.opacity(0.7), in: RoundedRectangle(cornerRadius: 6))
-                    HStack(spacing: 10) {
-                        Button("Copy") {
-                            NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(record.text, forType: .string)
-                        }
-                        Button("Reuse in composer") {
-                            model.pendingComposerText = record.text
-                        }
-                        if record.turnID != nil {
-                            Button("Show its results") { jumpTarget = record.turnID }
-                        }
-                        Spacer()
-                    }
-                    .font(Theme.metaFont)
-                    .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
-                }
-                .padding(.leading, 24)
-                .padding(.trailing, 8)
-                .padding(.bottom, 8)
-            }
-        }
-        .background(isExpanded ? Theme.surface.opacity(0.5) : Color.clear,
-                    in: RoundedRectangle(cornerRadius: 6))
-    }
-
-    @ViewBuilder
-    private func outcomeChip(_ record: SessionVM.PromptRecord) -> some View {
-        switch record.outcome {
-        case .none:
-            Label("working", systemImage: "hourglass")
-                .font(.system(size: 9.5))
-                .foregroundStyle(.secondary)
-        case .completed(let evidence):
-            Label(evidence > 0 ? "completed · \(evidence) evidence" : "completed",
-                  systemImage: "checkmark.circle.fill")
-                .font(.system(size: 9.5))
-                .foregroundStyle(Theme.successTint)
-        case .blocked:
-            Label("needs you", systemImage: "pause.circle")
-                .font(.system(size: 9.5))
-                .foregroundStyle(Theme.noticeTint)
-        case .failed:
-            Label("failed", systemImage: "xmark.circle")
-                .font(.system(size: 9.5))
-                .foregroundStyle(Theme.errorTint)
-        case .stopped:
-            Label("stopped", systemImage: "stop.circle")
-                .font(.system(size: 9.5))
-                .foregroundStyle(.secondary)
-        }
+        .buttonStyle(.plain)
+        .help("This chat's prompts: sort by time, copy them out, reopen what you attached (⇧⌘H)")
     }
 }
 
@@ -1526,6 +1414,18 @@ private struct ContextGaugeView: View {
     @Environment(AppModel.self) private var model
     let session: SessionVM
     let draft: String
+    /// The short form for a narrow pane: no bar, and "15K / 1M" for the numbers.
+    var compact = false
+
+    /// "15K", "1M", "262K" — a token count in a few characters.
+    nonisolated static func short(_ tokens: Int) -> String {
+        if tokens >= 1_000_000 {
+            let millions = Double(tokens) / 1_000_000
+            return millions >= 10 || millions == millions.rounded() ? "\(Int(millions.rounded()))M" : String(format: "%.1fM", millions)
+        }
+        if tokens >= 1_000 { return "\(Int((Double(tokens) / 1_000).rounded()))K" }
+        return "\(tokens)"
+    }
 
     var body: some View {
         let limit = model.transport.contextLimit()
@@ -1535,17 +1435,23 @@ private struct ContextGaugeView: View {
             Image(systemName: "gauge.with.dots.needle.50percent")
                 .font(.system(size: 11))
                 .foregroundStyle(tint(fraction))
-            Gauge(value: min(fraction, 1.0), in: 0...1) {
-                EmptyView()
-            } currentValueLabel: {
-                EmptyView()
+            if compact {
+                Text("\(Self.short(used)) / \(Self.short(limit))")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
+            } else {
+                Gauge(value: min(fraction, 1.0), in: 0...1) {
+                    EmptyView()
+                } currentValueLabel: {
+                    EmptyView()
+                }
+                .gaugeStyle(.accessoryLinearCapacity)
+                .tint(tint(fraction))
+                .frame(width: 64)
+                Text("\(used.formatted()) / \(limit.formatted()) ctx")
+                    .monospacedDigit()
+                    .foregroundStyle(.secondary)
             }
-            .gaugeStyle(.accessoryLinearCapacity)
-            .tint(tint(fraction))
-            .frame(width: 64)
-            Text("\(used.formatted()) / \(limit.formatted()) ctx")
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
         }
         .help("Context window in use for \(model.transport.activeModelID ?? "this model"): \(used.formatted()) of \(limit.formatted()) tokens — window \(model.transport.contextSource()). Type /compact to free space.")
     }

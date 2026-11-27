@@ -47,6 +47,10 @@ public final class AppConfig {
         static let agentSavesSkills = "agent.savesSkills.v1"
         static let sidebarByRecent = "sidebar.byRecent.v1"
         static let sidebarCollapsed = "sidebar.collapsed.v1"
+        static let editorPane = "code.editorPane.v1"
+        static let turnStyle = "turn.style.v1"
+        static let maxImages = "images.perRequest.v1"
+        static let learnedImageLimits = "images.learnedLimits.v1"
     }
 
     private let defaults: UserDefaults
@@ -128,6 +132,20 @@ public final class AppConfig {
     /// "Show when the agent makes a plan": the panel opens by itself the first time a chat's agent writes a todo
     /// list or proposes a plan.
     public var planPanelAutoOpen = true { didSet { persist() } }
+
+    // Code mode's editor pane.
+    /// When the editor shows in code mode (see `EditorPaneMode`): only while a file is open, always, or never.
+    public var editorPane: EditorPaneMode = .whenFileOpen { didSet { persist() } }
+
+    // How a turn is presented.
+    /// Whether a turn gets the Planning → Execution → Results card (see `TurnStyle`).
+    public var turnStyle: TurnStyle = .automatic { didSet { persist() } }
+
+    // Pictures.
+    /// The most pictures sent in one request, for a server that hasn't said otherwise. Older ones roll off.
+    public var maxImagesPerRequest: Int = ImageBudget.defaultMaxImages { didSet { persist() } }
+    /// What servers said they take, by route id — learned from a refusal, used from then on.
+    public var learnedImageLimits: [String: Int] = [:] { didSet { persist() } }
 
     /// The task queue is deliberately paused (the user pressed Stop). A crash
     /// or restart does *not* set this, so an interrupted queue resumes on
@@ -505,6 +523,10 @@ public final class AppConfig {
         agentSavesSkills = defaults.object(forKey: Keys.agentSavesSkills) as? Bool ?? true
         sidebarByRecent = defaults.bool(forKey: Keys.sidebarByRecent)
         sidebarCollapsed = Set(defaults.stringArray(forKey: Keys.sidebarCollapsed) ?? [])
+        editorPane = EditorPaneMode(rawValue: defaults.string(forKey: Keys.editorPane) ?? "") ?? .whenFileOpen
+        turnStyle = TurnStyle(rawValue: defaults.string(forKey: Keys.turnStyle) ?? "") ?? .automatic
+        maxImagesPerRequest = defaults.object(forKey: Keys.maxImages) as? Int ?? ImageBudget.defaultMaxImages
+        learnedImageLimits = defaults.dictionary(forKey: Keys.learnedImageLimits) as? [String: Int] ?? [:]
     }
 
     private func persist() {
@@ -542,6 +564,57 @@ public final class AppConfig {
         defaults.set(planPanelOpen, forKey: Keys.planPanelOpen)
         defaults.set(planPanelWidth, forKey: Keys.planPanelWidth)
         defaults.set(planPanelAutoOpen, forKey: Keys.planPanelAutoOpen)
+        defaults.set(editorPane.rawValue, forKey: Keys.editorPane)
+        defaults.set(turnStyle.rawValue, forKey: Keys.turnStyle)
+        defaults.set(maxImagesPerRequest, forKey: Keys.maxImages)
+        defaults.set(learnedImageLimits, forKey: Keys.learnedImageLimits)
+    }
+}
+
+/// When code mode shows its editor pane. The agent is the point of the window; the editor is there when it is
+/// useful and out of the way when it isn't.
+public enum EditorPaneMode: String, CaseIterable, Sendable {
+    /// Shown while a file is open; with none open the agent takes the room.
+    case whenFileOpen
+    /// Always shown, an empty "No file open" pane included.
+    case always
+    /// Hidden until switched back on; files the agent changes don't bring it up.
+    case hidden
+
+    public var label: String {
+        switch self {
+        case .whenFileOpen: "When a file is open"
+        case .always: "Always"
+        case .hidden: "Hidden"
+        }
+    }
+}
+
+/// How much ceremony a turn gets.
+public enum TurnStyle: String, CaseIterable, Sendable {
+    /// A question or a small task is just answered — text, tool calls, an answer. The phase card and the plan
+    /// panel appear only when the work is big enough to be planned: the agent wrote a step list, a goal, a
+    /// queue task.
+    case automatic
+    /// Every turn gets the Planning → Execution → Results card.
+    case alwaysPlan
+    /// No turn gets it.
+    case conversational
+
+    public var label: String {
+        switch self {
+        case .automatic: "Automatic"
+        case .alwaysPlan: "Always plan"
+        case .conversational: "Just talk"
+        }
+    }
+
+    public var detail: String {
+        switch self {
+        case .automatic: "Questions and small tasks are simply answered. The plan card appears when the agent lays out steps, or for a goal or a queue task."
+        case .alwaysPlan: "Every turn shows Planning → Execution → Validation → Results."
+        case .conversational: "Never show the plan card; the agent talks, uses its tools and answers."
+        }
     }
 }
 

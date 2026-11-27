@@ -191,8 +191,11 @@ struct AppCommands: Commands {
                 .disabled(model.selectedSession == nil || !model.guardian.isSignedIn)
             Button("Credentials Vault…") { model.showVault = true }
                 .keyboardShortcut("k", modifiers: [.command, .shift])
-            Button("Prompt History…") { model.showPromptHistory = true }
+            Button("Prompt History…") { model.openPromptHistory(chatID: nil) }
                 .keyboardShortcut("p", modifiers: [.command, .control])
+            Button("This Chat's Prompts…") { model.openPromptHistory(chatID: model.selectedSession?.id) }
+                .keyboardShortcut("h", modifiers: [.command, .shift])
+                .disabled(model.selectedSession == nil)
             Button("Reload Project Context") { model.transport.refreshProjectContext() }
                 .disabled(model.project == nil)
         }
@@ -211,6 +214,11 @@ struct AppCommands: Commands {
                 .keyboardShortcut("p", modifiers: [.command, .shift])
             Button("Toggle File Tree") { model.code.showTree.toggle() }
                 .keyboardShortcut("b", modifiers: .command)
+            Button("Toggle Editor") {
+                model.mode = .code
+                model.toggleEditorPane()
+            }
+            .keyboardShortcut("e", modifiers: [.command, .option])
             Button("Toggle Terminal") {
                 model.mode = .code
                 model.code.toggleTerminal()
@@ -228,6 +236,12 @@ struct AppCommands: Commands {
 // MARK: - Root
 
 struct RootView: View {
+    /// Whether the plan panel can sit beside the work without squeezing it past what it can show: a chat needs
+    /// about 460 points, code mode's panes about 620.
+    nonisolated static func planFitsBeside(width: CGFloat, planWidth: Double, codeMode: Bool) -> Bool {
+        width - CGFloat(planWidth) >= (codeMode ? 620 : 460)
+    }
+
     @Environment(AppModel.self) private var model
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     /// The banner's "Sign in to AWS…" is running (the browser is open).
@@ -240,12 +254,29 @@ struct RootView: View {
             SidebarView()
                 .navigationSplitViewColumnWidth(min: 200, ideal: 250, max: 340)
         } detail: {
-            HStack(spacing: 0) {
-                detail
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                if model.config.planPanelOpen {
-                    PlanPanelColumn()
-                        .transition(.move(edge: .trailing))
+            GeometryReader { proxy in
+                // The plan and the task queue share the right edge: the queue, while it is open, is in front.
+                let planOpen = model.config.planPanelOpen && !model.showQueuePanel
+                // Beside the work when there is room for both; over it when the window is too small — never
+                // squeezing the chat until its edges are cut off.
+                let beside = planOpen && Self.planFitsBeside(width: proxy.size.width,
+                                                             planWidth: model.config.planPanelWidth,
+                                                             codeMode: model.mode == .code)
+                HStack(spacing: 0) {
+                    detail
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    if beside {
+                        PlanPanelColumn()
+                            .transition(.move(edge: .trailing))
+                    }
+                }
+                .overlay(alignment: .trailing) {
+                    if planOpen, !beside {
+                        PlanPanelColumn()
+                            .frame(maxWidth: max(240, proxy.size.width - 60), alignment: .trailing)
+                            .shadow(color: .black.opacity(0.35), radius: 14, x: -4)
+                            .transition(.move(edge: .trailing))
+                    }
                 }
             }
             .toolbar { toolbar }
@@ -441,7 +472,7 @@ struct RootView: View {
             } label: {
                 Label("Plan", systemImage: "checklist")
             }
-            .help(model.config.planPanelOpen ? "Hide the plan (⇧⌘P)" : "Show the plan (⇧⌘P)")
+            .help(model.config.planPanelOpen && !model.showQueuePanel ? "Hide the plan (⇧⌘P)" : "Show the plan (⇧⌘P)")
         }
 
         ToolbarItem {

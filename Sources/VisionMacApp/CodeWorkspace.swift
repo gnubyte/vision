@@ -20,6 +20,9 @@ final class CodeWorkspace {
     var terminalVisible = false
 
     var showTree = true
+    /// Counts the files opened by hand. Code mode watches it: opening a file while the editor pane is hidden
+    /// brings the pane back.
+    private(set) var editorRequests = 0
     /// How a click in the file tree opens a file. True (the default): a
     /// single click opens it, like today. False: a single click only selects
     /// and a double-click opens — for those who navigate a lot and edit
@@ -123,6 +126,7 @@ final class CodeWorkspace {
 
     func openFile(_ url: URL) {
         selection = url
+        if !restoring { editorRequests += 1 }
         if let existing = buffers.first(where: { $0.url == url }) {
             activeBufferID = existing.id
             return

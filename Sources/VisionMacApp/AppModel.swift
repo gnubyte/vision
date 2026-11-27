@@ -86,6 +86,12 @@ final class AppModel {
     var showVault = false
     /// The durable prompt-history viewer (all modes).
     var showPromptHistory = false
+    /// The chat the prompt history opens on (nil: every chat).
+    var promptHistoryChatID: String?
+    /// A prompt (its record id) the history opens unfolded, once.
+    var promptHistoryFocus: String?
+    /// Attachments a caller wants staged in the selected chat's composer (the prompt history's "Attach again").
+    var pendingComposerAttachments: [MessageAttachment] = []
     /// The Amazon Bedrock guide, when it is open (nil = closed).
     var bedrockGuide: BedrockGuideRequest?
     /// The "Connect my Spark Swapper" guide, when it is open.
@@ -254,9 +260,29 @@ final class AppModel {
         IsolatedRun.defaults.removeObject(forKey: LegacySettingsImport.noticePendingKey)
     }
 
-    /// Show or hide the plan panel.
+    /// Open the prompt history on one chat's prompts, or (nil) on every chat's.
+    func openPromptHistory(chatID: String?) {
+        promptHistoryChatID = chatID
+        showPromptHistory = true
+    }
+
+    /// Show or hide the plan panel. It shares the right edge with the task queue: opening one puts the other
+    /// away, so the chat is never squeezed between two side panels.
     func togglePlan() {
-        withAnimation(.easeInOut(duration: 0.18)) { config.planPanelOpen.toggle() }
+        withAnimation(.easeInOut(duration: 0.18)) {
+            if config.planPanelOpen, showQueuePanel {
+                // The plan was open behind the queue: bring it forward.
+                showQueuePanel = false
+            } else {
+                config.planPanelOpen.toggle()
+                if config.planPanelOpen { showQueuePanel = false }
+            }
+        }
+    }
+
+    /// Show or hide code mode's editor pane (the toolbar's editor button, ⌥⌘E).
+    func toggleEditorPane() {
+        config.editorPane = CodeModeView.toggledEditorMode(from: config.editorPane, openFiles: code.buffers.count)
     }
 
     /// Open the Amazon Bedrock guide — from the start, or on one page for an existing route

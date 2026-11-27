@@ -9,6 +9,27 @@ prompt on first launch — right-click the app and choose **Open**, or run:
 xattr -d com.apple.quarantine /Applications/Vision.app
 ```
 
+## What's new in 0.20.0 — pictures that fit, plain answers, an optional editor, Vision for iPhone
+
+- **Pictures roll off instead of sticking the chat.** A request carries at most
+  the model's picture limit (8 by default). The newest capture and the pictures
+  on your latest message travel; older ones roll off to disk with a note saying
+  where they are, and the model can ask for one again. A server that takes fewer
+  is asked again with fewer in the same turn, and the number is remembered.
+- **PDFs and files work with local models.** A text file goes inline, a PDF as
+  its text, a scanned PDF as pictures of its pages.
+- **Questions are just answered.** The plan card and the plan panel appear only
+  for planned work (a step list, a goal, a queue task). **Settings ▸ General ▸
+  Planning**: Automatic, Always plan, or Just talk.
+- **The editor is optional in code mode.** It shows while a file is open; the
+  toolbar's editor button (⌥⌘E) hides or shows it. The plan and the task queue
+  share the right edge.
+- **Prompt history per chat** (⇧⌘H): sort by time or duration, copy or save as
+  Markdown, CSV or JSON, and reopen or re-attach what a prompt carried.
+- **Vision for iPhone.** `Vision.ipa` (unsigned — sideload it with AltStore or
+  Sideloadly, or build `iOS/` in Xcode): add a Spark Swapper box by connection
+  code, chat with what it serves, attach photos and PDFs, switch models.
+
 ## What's new in 0.18.0 — worktrees, Agent mode, Guardian's people and local models
 
 - **Chats in their own git worktree.** **New Chat ▾ ▸ New Chat in a Worktree…**

@@ -15,7 +15,8 @@ ScreenCaptureKit and never touches your settings, chats or Keychain:
 .build/debug/Vision --snapshot /tmp/vision-shots --snapshot-scenes chat,code
 ```
 
-`chat`, `code`, `setup` and `settings-models` come out as 2x PNGs, over a made-up workspace
+`chat`, `code`, `code-agent` (code mode with no file open), `prompt-history`, `setup` and `settings-models`
+come out as 2x PNGs, over a made-up workspace
 (the seeded "ledger" project). `cp /tmp/vision-shots/code.png assets/screenshot.png` and copy the
 others into `assets/screenshots/`. `--snapshot-live <aws-profile>` first runs a real agent turn and
 seeds the chat from what happened (see `assets/screenshots/seed-from-live-run.py`).

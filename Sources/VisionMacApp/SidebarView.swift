@@ -32,6 +32,8 @@ struct SidebarView: View {
                 .padding(.top, 6)
             if model.anythingRunning { runningBar.padding(.top, 6) }
             if !isAgentMode { sortPicker.padding(.horizontal, 10).padding(.top, 8) }
+            // A line under the buttons, so a list scrolled part-way reads as scrolled, not as tucked under them.
+            Divider().padding(.top, 8)
 
             List(selection: Binding(
                 get: { transport.selectedID },
@@ -46,6 +48,8 @@ struct SidebarView: View {
                 }
             }
             .listStyle(.sidebar)
+            // Rows scrolled past the top stay out from under the buttons above the list.
+            .clipped()
         }
         .safeAreaInset(edge: .bottom) { footer }
         .confirmationDialog("Delete “\(deleting?.title ?? "this chat")”?",
@@ -96,7 +100,7 @@ struct SidebarView: View {
         VStack(spacing: 0) {
             navRow("Open Folder…", icon: "folder.badge.plus") { model.chooseProject() }
             navRow("Prompt History", icon: "clock.arrow.circlepath", count: model.transport.promptHistory.count) {
-                model.showPromptHistory = true
+                model.openPromptHistory(chatID: nil)
             }
             navRow("Chat Archive", icon: "archivebox", count: transport.archive.chats.count) { model.showArchive = true }
             navRow("Memory & Skills", icon: "brain") { model.showMemoryAndSkills = true }
