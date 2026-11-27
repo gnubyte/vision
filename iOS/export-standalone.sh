@@ -45,7 +45,7 @@ head = """# The Xcode project for Vision on iPhone and iPad, generated with Xcod
 #
 # Core/ holds the harness code the app shares with Vision for macOS (the Spark Swapper client, the
 # OpenAI-compatible client, certificate pinning, picture roll-off, attachment handling, prompt history). It is a
-# copy made by the harness repository's iOS/export-standalone.sh: change those files there, not here.
+# copy made by iOS/export-standalone.sh in github.com/gnubyte/vision: change those files there, not here.
 """
 body = text[text.index("name: Vision"):]
 open(sys.argv[2], "w").write(head + body)
@@ -137,8 +137,8 @@ cat > "$DEST/README.md" <<'README'
 # Vision for iPhone
 
 Chat with the model your own [Spark Swapper](https://github.com/gnubyte/DGX-Spark-Swapper) box serves — a DGX
-Spark or a Strix Halo — and switch what it serves, from an iPhone or iPad (iOS 17+). The companion of Vision
-for macOS; `Core/` is the same harness code the Mac app runs.
+Spark or a Strix Halo — and switch what it serves, from an iPhone or iPad (iOS 17+). The companion of
+[Vision for macOS](https://github.com/gnubyte/vision); `Core/` is the same harness code the Mac app runs.
 
 - **Boxes** — add a box by pasting the connection code from the Swapper's **Connect** tab (it carries the
   address, the certificate and an app token, so no password is stored), or with the address and the web page's
@@ -193,7 +193,8 @@ The phone has to reach the box: the same network, or a VPN such as Tailscale.
 ```
 Vision/          the app: SwiftUI screens and its model (MobileModel.swift)
 VisionTests/     the live check's tests
-Core/            harness code shared with Vision for macOS — a copy; change it in the harness repository
+Core/            harness code shared with Vision for macOS — a copy; change it in gnubyte/vision (its
+                 iOS/export-standalone.sh writes this repository out again)
 tools/           the stand-in model server the live check uses
 project.yml      the XcodeGen project
 ```

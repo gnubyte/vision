@@ -1,6 +1,8 @@
-> **Vision Harness** — the harness for macOS and, from 0.20, iPhone and iPad. Mac releases 0.16–0.19 were
-> published at [github.com/phastings503cm/vision-mac](https://github.com/phastings503cm/vision-mac); 0.20 is
-> built from this repository, which attaches the Mac `Vision.dmg` and the iPhone `Vision.ipa` to each release.
+> **Vision** — the harness for macOS and, from 0.20, iPhone and iPad, at
+> [github.com/gnubyte/vision](https://github.com/gnubyte/vision). Each release attaches the Mac `Vision.dmg` and
+> the iPhone `Vision.ipa`; the iPhone app also has a repository of its own,
+> [gnubyte/vision-ios](https://github.com/gnubyte/vision-ios). (Mac releases 0.16–0.19 were published at
+> [phastings503cm/vision-mac](https://github.com/phastings503cm/vision-mac).)
 
 <p align="center">
   <img src="assets/logo/logo.png" alt="Vision for macOS" width="120" />
@@ -41,7 +43,9 @@ instruction files load, and all of them are inside the permission boundary.
 
 ## Download
 
-Grab the latest build from [Releases](https://github.com/phastings503cm/vision-mac/releases). The
+Grab the latest build from [Releases](https://github.com/gnubyte/vision/releases), or a build of the newest
+commit from [Actions ▸ CI](https://github.com/gnubyte/vision/actions/workflows/ci.yml) (the latest run ▸
+Artifacts ▸ `Vision-macOS-dmg`). The
 `Vision.dmg` contains the app — drag **Vision** into **Applications**.
 
 <!-- The README's one mention of the app's old name, so its users recognise it. Keep it to this sentence. -->
@@ -593,7 +597,8 @@ app tokens, connection codes, status, switch jobs — with no GPU behind it) and
 that, like vLLM, refuses more than two pictures a request, then in the simulator adds the box both ways,
 chats with too many pictures and with a PDF, and asks for a model switch.
 
-To keep the app in a repository of its own, `iOS/export-standalone.sh <folder>` writes it out with a copy of
+The app also lives in a repository of its own, [gnubyte/vision-ios](https://github.com/gnubyte/vision-ios):
+`iOS/export-standalone.sh <folder>` writes it out with a copy of
 exactly the shared harness files it builds, its own `project.yml`, the IPA workflow and a README; CI builds
 that export on every push, so it is known to stand alone.
 
